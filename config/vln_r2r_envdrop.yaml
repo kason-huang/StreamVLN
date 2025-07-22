@@ -45,15 +45,15 @@ habitat:
         success_distance: 3.0
       spl:
         type: SPL
-      oracle_success:
-        type: OracleSuccess
-        # success_distance: 3.0
-      oracle_navigation_error:
-        type: OracleNavigationError
+      # oracle_success:
+      #   type: OracleSuccess
+      #   # success_distance: 3.0
+      # oracle_navigation_error:
+      #   type: OracleNavigationError
         
   dataset:
     type: R2RVLN-v1
-    split: val_unseen
+    split: val_seen
     scenes_dir: /data/home/jiangjiajun/data/scene_datasets
-    data_path: /data/home/jiangjiajun/data/datasets/R2R_VLNCE_v1_preprocessed/{split}/{split}.json.gz
-    # data_path: /data/home/jiangjiajun/data/streamvln_datasets/datasets/envdrop/envdrop/envdrop.json.gz
+    # data_path: data/datasets/r2r/{split}/{split}.json.gz
+    data_path: /data/home/jiangjiajun/data/streamvln_datasets/datasets/envdrop/envdrop/envdrop.json.gz

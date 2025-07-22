@@ -12,6 +12,7 @@ import itertools
 import quaternion
 import transformers
 import numpy as np
+import pdb
 
 from typing import Any
 from omegaconf import OmegaConf
@@ -191,11 +192,17 @@ class VLNEvaluator:
 
     def eval_action(self, idx) -> None:
         env = self.config_env()
+        # Get all the episodes rearranged by the scene_id
+        # I guess it is for loading the glb for once
         scene_episode_dict = {}
         for episode in env.episodes:
             if episode.scene_id not in scene_episode_dict:
                 scene_episode_dict[episode.scene_id] = []
             scene_episode_dict[episode.scene_id].append(episode)
+        
+        # filtered_scene_episode_dict = {
+        #     k: v for k, v in scene_episode_dict.items() if "QUCTc6BB5sX" in k
+        # }
 
         intrinsic_matrix = self.get_intrinsic_matrix(self.config.habitat.simulator.agents.main_agent.sim_sensors.rgb_sensor)
         sucs, spls, oss, ones = [], [], [], []
@@ -220,6 +227,14 @@ class VLNEvaluator:
                 episode_instruction = episode.instruction.instruction_text if 'objectnav' not in self.config_path else episode.object_category
                 print("episode start",episode_instruction)
                 episode_id = episode.episode_id
+
+
+                print(f"scene_episode {scene_id}_{episode_id}")
+                
+                # debug: if the episode id is not 1003, skip it
+                # if episode_id != 1003:
+                #     continue
+                
                 if [scene_id, episode_id, episode_instruction] in done_res:
                     continue
                 self.model.reset_for_env(idx)
@@ -339,6 +354,31 @@ class VLNEvaluator:
                         print('actions', action_seq, flush=True)
                         if len(action_seq) == 0: ## if generated llm without Specific values
                             action_seq = [0]
+                        
+                        if len(action_seq) < 4 and 0 not in action_seq:
+                            action_seq_original = action_seq
+                            print(f"action_seq is too short: {len(action_seq)}, fill with 2, 3", flush=True)
+                            with open(os.path.join(self.output_path, f'check_sim_{self.epoch}', f'{scene_id}_{episode_id}.txt'), 'w') as f:
+                                f.write(' '.join(str(a) for a in action_seq_original))
+                            if len(action_seq) == 0:
+                                action_seq = [2, 3, 2, 3]  
+                            elif len(action_seq) == 1:
+                                action_seq += [2, 2, 3]     
+                            elif len(action_seq) == 2:
+                                action_seq += [2, 3]       
+                            elif len(action_seq) == 3:
+                                action_seq += [2]
+                        
+                        if len(action_seq) > 4:
+                            print(f"action_seq is too long: {len(action_seq)}, truncate to 4", flush=True)
+                            action_seq_original = action_seq
+                            action_seq = action_seq[:4]
+                            # export and save the "scene id" into the self.output_path as a txt
+                            # os.path.join(self.output_path, f'check_sim_{self.epoch}' save in this directory
+                            # named as f"{scene_id}_{episode_id}_action_seq.txt"
+                            with open(os.path.join(self.output_path, f'check_sim_{self.epoch}', f'{scene_id}_{episode_id}.txt'), 'w') as f:
+                                f.write(' '.join(str(a) for a in action_seq_original))
+
                     action = action_seq.pop(0)
                     
                     observations = env.step(action)
@@ -493,7 +533,7 @@ def eval():
     parser.add_argument("--model_path", type=str, default="")
     parser.add_argument("--habitat_config_path", type=str, default='config/vln_r2r.yaml')
     parser.add_argument("--eval_split", type=str, default='val_unseen')
-    parser.add_argument("--output_path", type=str, default='./results/val_unseen/streamvln')
+    parser.add_argument("--output_path", type=str, default='./results/val_unseen/streamvln-R2Rv1')
     parser.add_argument("--num_future_steps", type=int, default=4)
     parser.add_argument("--num_frames", type=int, default=32)
     parser.add_argument("--save_video", action="store_true", default=False)
@@ -531,6 +571,7 @@ def eval():
     model.model.num_history = args.num_history
     model.requires_grad_(False)
     model.to(local_rank)
+    print(f"[Rank {local_rank}] Model on device:", next(model.parameters()).device)
     evaluate(model, tokenizer, args)
 
 
