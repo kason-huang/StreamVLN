@@ -36,6 +36,8 @@
 </div>
 
 ## 📢 News
+[2025-07-30] We have released the ScaleVLN training data, including a subset of ~150k episodes converted from the discrete environment setting to the VLN-CE format. For usage details, see [here](https://huggingface.co/datasets/cywan/StreamVLN-Trajectory-Data/blob/main/README.md#envdrop--scalevln-dataset-note).
+
 [2025-07-18] We’ve fixed a bug where num_history was not correctly passed to the model during evaluation, causing it to default to None. This had a significant impact on performance. Please make sure to pull the latest code for correct evaluation.
 
 ## 🛠 Getting Started
@@ -108,19 +110,21 @@ We test under the following environment:
 
 To get started, you need to prepare three types of data:
 
-1. **Matterport3D (MP3D) Scenes**  
-   Download the MP3D scenes from the [official project page](https://niessner.github.io/Matterport/), and place them under `data/scene_datasets/mp3d/`.
+1. **Scene Datasets**  
+   - For **R2R**, **RxR** and **EnvDrop**: Download the MP3D scenes from the [official project page](https://niessner.github.io/Matterport/), and place them under `data/scene_datasets/mp3d/`.
+   - For **ScaleVLN**: Download the HM3D scenes from the [official github page](https://github.com/matterport/habitat-matterport-3dresearch), and place the `train` split under `data/scene_datasets/hm3d/`
 
 2. **VLN-CE Episodes**  
    Download the VLN-CE episodes:
-   - [r2r](https://drive.google.com/file/d/18DCrNcpxESnps1IbXVjXSbGLDzcSOqzD/view) (rename R2R_VLNCE_v1/ -> r2r/)
-   - [rxr](https://drive.google.com/file/d/145xzLjxBaNTbVgBfQ8e9EsBAV8W-SM0t/view) (rename RxR_VLNCE_v0/ -> rxr/)
-   - [envdrop](https://drive.google.com/file/d/1fo8F4NKgZDH-bPSdVU3cONAkt5EW-tyr/view) (rename R2R_VLNCE_v1-3_preprocessed/envdrop/ -> envdrop/)
+   - [r2r](https://drive.google.com/file/d/18DCrNcpxESnps1IbXVjXSbGLDzcSOqzD/view) (Rename `R2R_VLNCE_v1/` -> `r2r/`)
+   - [rxr](https://drive.google.com/file/d/145xzLjxBaNTbVgBfQ8e9EsBAV8W-SM0t/view) (Rename `RxR_VLNCE_v0/` -> `rxr/`)
+   - [envdrop](https://drive.google.com/file/d/1fo8F4NKgZDH-bPSdVU3cONAkt5EW-tyr/view) (Rename `R2R_VLNCE_v1-3_preprocessed/envdrop/` -> `envdrop/`)
+   - [scalevln](https://huggingface.co/datasets/cywan/StreamVLN-Trajectory-Data/blob/main/ScaleVLN/scalevln_subset_150k.json.gz) (Please store it in `scalevln/scalevln_subset_150k.json.gz`)
   
    Extract them into the `data/datasets/` directory.
 
 3. **Collected Trajectory Data**  
-  We provide pre-collected observation-action trajectory data for training. These trajectories were collected using the **training episodes** from **R2R** and **RxR** under the Matterport3D environment. For the **EnvDrop** subset, please refer to [DATASET.md](https://huggingface.co/datasets/cywan/StreamVLN-Trajectory-Data/blob/main/README.md) for instructions on how to collect it yourself.
+  We provide pre-collected observation-action trajectory data for training. These trajectories were collected using the **training episodes** from **R2R** and **RxR** under the Matterport3D environment. For the **EnvDrop** and **ScaleVLN** subset, please refer to [here](https://huggingface.co/datasets/cywan/StreamVLN-Trajectory-Data/blob/main/README.md) for instructions on how to collect it yourself.
   Download the observation-action trajectory data from [Hugging Face](https://huggingface.co/datasets/cywan/StreamVLN-Trajectory-Data), and extract it to `data/trajectory_data/`.
 
 Your final folder structure should look like this:
@@ -142,11 +146,16 @@ data/
 │   │   └── val_unseen/
 │   │       ├── val_unseen_guide.json.gz
 │   │       └── ...
-│   └── envdrop/
-│       ├── envdrop.json.gz
-│       └── ...
-│
+│   ├── envdrop/
+│   │   ├── envdrop.json.gz
+│   │   └── ...
+│   └── scalevln/
+│       └── scalevln_subset_150k.json.gz
 ├── scene_datasets/
+│   └── hm3d/
+│       ├── 00000-kfPV7w3FaU5/
+│       ├── 00001-UVdNNRcVyV1/
+│       └── ...
 │   └── mp3d/
 │       ├── 17DRP5sb8fy/
 │       ├── 1LXtFkjw3qL/
@@ -158,7 +167,10 @@ data/
     ├── RxR/
     │   ├── images/
     │   └── annotations.json
-    └── EnvDrop/
+    ├── EnvDrop/
+    │   ├── images/
+    │   └── annotations.json
+    └── ScaleVLN/
         ├── images/
         └── annotations.json
 
@@ -175,7 +187,7 @@ We provide two model checkpoints for different use cases:
   This [checkpoint](https://huggingface.co/mengwei0427/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_real_world) is recommended for deployment on physical robots.
 
   We made two modifications:  
-  1. **Remove redundant initial turn actions**: The initial left/right turns not mentioned in the instructions are removed for better instruction alignment.  
+  1. **Remove redundant initial spinning actions**: The initial left/right turns not mentioned in the instructions are removed for better instruction alignment.  
   2. **Trajectory safety**: Enhanced obstacle avoidance ensures more reliable navigation in real-world environments.
 
 ## 🚀 Training
