@@ -216,7 +216,8 @@ class VLNEvaluator:
         
         # DEBUG
         # Using only one episode for debugging
-        env.episodes = env.episodes[0:1]
+        # env.episodes = env.episodes[0:1]
+
         return env
 
     def eval_action(self, idx) -> None:
@@ -622,7 +623,7 @@ class VLNEvaluator:
             ## 'you can spot <image>'
             prompt = random.choice(self.conjunctions) + DEFAULT_IMAGE_TOKEN
 
-            pdb.set_trace()
+            # pdb.set_trace()
 
             if len(source[0]["value"]) != 0:
                 source[0]["value"] += f" {prompt}."
@@ -717,10 +718,10 @@ def eval():
     parser.add_argument("--model_path", type=str, default="")
     parser.add_argument("--habitat_config_path", type=str, default='config/vln_r2r.yaml')
     parser.add_argument("--eval_split", type=str, default='val_unseen')
-    parser.add_argument("--output_path", type=str, default='./results/val_unseen/streamvln-R2Rv1-debug')
+    parser.add_argument("--output_path", type=str, default='./results/val_unseen/streamvln-R2Rv1-slurm-eval')
     parser.add_argument("--num_future_steps", type=int, default=4)
     parser.add_argument("--num_frames", type=int, default=32)
-    parser.add_argument("--save_video", action="store_true", default=True)
+    parser.add_argument("--save_video", action="store_true", default=False)
     parser.add_argument("--num_history", type=int, default=8)
     parser.add_argument("--model_max_length", type=int, default=4096,
                         help= "Maximum sequence length. Sequences will be right padded (and possibly truncated).")
