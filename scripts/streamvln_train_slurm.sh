@@ -1,18 +1,40 @@
 #!/bin/bash
 #SBATCH --job-name=blip3o    # Job name
-#SBATCH --nodes=4                          # Number of nodes
+#SBATCH --nodes=2                            # Number of nodes
 #SBATCH --gres=gpu:8                         # Number of GPUs per node
 #SBATCH --time=96:00:00                      # Time limit (hh:mm:ss)
 
-export HF_HOME=/HF/Home/
-MASTER_ADDR=`scontrol show hostname $SLURM_JOB_NODELIST | head -n1`
-MASTER_PORT=$((RANDOM % 101 + 20001))
+#SBATCH --reservation=laser
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=jjiang127@connect.hkust-gz.edu.cn
+#SBATCH --output=log/slurm-%j.out
+#SBATCH --error=log/slurm-%j.err
 
-VIDEO_FOLDER="data/trajectory_data/R2R","data/trajectory_data/RxR","data/trajectory_data/EnvDrop"
+
+source /home/jiangjiajun/miniconda3/etc/profile.d/conda.sh
+conda activate streamvln
+
+export HF_HOME=/shared_space/jiangjiajun/hf_cache
+
+# 定义 master 节点的地址和端口
+MASTER_ADDR=`scontrol show hostname $SLURM_JOB_NODELIST | head -n1`
+# MASTER_PORT=$((RANDOM % 101 + 20001))
+export MASTER_PORT=29500
+
+echo "MASTER_ADDR=$MASTER_ADDR"
+echo "MASTER_PORT=$MASTER_PORT"
+
+scontrol show hostnames $SLURM_JOB_NODELIST
+
+
+sleep 30
+
+# 定义视频数据路径
+VIDEO_FOLDER="/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/R2R","/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/RxR","/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/EnvDrop"
 
 LLM_VERSION="Qwen/Qwen2-7B-Instruct"
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
-VISION_MODEL_VERSION="google/siglip2-so400m-patch14-384"
+VISION_MODEL_VERSION="checkpoints/siglip2-so400m-patch14-384"
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 ############### Pretrain ################
@@ -22,7 +44,7 @@ echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 ############### Finetune ################
 PROMPT_VERSION="qwen_1_5"
 MID_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_1epoch_196token_8history_32frame"
-PREV_STAGE_CHECKPOINT="lmms-lab/LLaVA-Video-7B-Qwen2"
+PREV_STAGE_CHECKPOINT="checkpoints/LLaVA-Video-7B-Qwen2"
 echo "PREV_STAGE_CHECKPOINT: ${PREV_STAGE_CHECKPOINT}"
 echo "MID_RUN_NAME: ${MID_RUN_NAME}"
 
@@ -72,4 +94,4 @@ srun torchrun --nnodes=$SLURM_NNODES --nproc_per_node=8 \
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
-    --report_to wandb \
+    # --report_to wandb \

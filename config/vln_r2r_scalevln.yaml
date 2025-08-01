@@ -54,6 +54,6 @@ habitat:
   dataset:
     type: R2RVLN-v1
     split: val_seen
-    scenes_dir: /data/home/jiangjiajun/data/scene_datasets
+    scenes_dir: /shared_space/jiangjiajun/data/scene_datasets
     # data_path: data/datasets/r2r/{split}/{split}.json.gz
-    data_path: /data/home/jiangjiajun/data/streamvln_datasets/trajectory_data/ScaleVLN/scalevln_subset_150k.json.gz
+    data_path: /shared_space/jiangjiajun/data/streamvln_datasets/datasets/scalevln/scalevln_subset_150k.json.gz

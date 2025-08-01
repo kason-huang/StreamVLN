@@ -9,7 +9,7 @@ from habitat_baselines.config.default import get_config
 from habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
 
 CONFIG_PATH = "config/vln_r2r_scalevln.yaml"
-ANNOT_PATH = "/data/home/jiangjiajun/data/streamvln_datasets/trajectory_data/ScaleVLN/annotations.json"
+ANNOT_PATH = "/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/ScaleVLN/annotations.json"
 GOAL_RADIUS = 0.25
 
 env = habitat.Env(config=get_config(CONFIG_PATH))
@@ -18,7 +18,7 @@ annotations = json.load(open(ANNOT_PATH, "r"))
 for episode in tqdm(env.episodes, desc="Processing episodes"):
     annotation = next(annot for annot in annotations if annot["id"] == int(episode.episode_id))
     video_id = annotation["video"]
-    rgb_dir = f"/data/home/jiangjiajun/data/streamvln_datasets/trajectory_data/ScaleVLN/{video_id}/rgb"
+    rgb_dir = f"/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/ScaleVLN/{video_id}/rgb"
 
     expected_frame_count = len(annotation["actions"])  # 每一步动作 → 一帧图像
     if os.path.exists(rgb_dir):
