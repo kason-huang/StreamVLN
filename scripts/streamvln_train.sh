@@ -1,33 +1,56 @@
-#!/bin/bash
-#SBATCH --job-name=blip3o    # Job name
-#SBATCH --nodes=4                          # Number of nodes
-#SBATCH --gres=gpu:8                         # Number of GPUs per node
-#SBATCH --time=96:00:00                      # Time limit (hh:mm:ss)
+hostname
 
-export HF_HOME=/HF/Home/
-MASTER_ADDR=`scontrol show hostname $SLURM_JOB_NODELIST | head -n1`
-MASTER_PORT=$((RANDOM % 101 + 20001))
+source /home/jiangjiajun/miniconda3/etc/profile.d/conda.sh
+conda activate streamvln
 
-VIDEO_FOLDER="data/trajectory_data/R2R","data/trajectory_data/RxR","data/trajectory_data/EnvDrop"
+export HF_HOME=/shared_space/jiangjiajun/hf_cache
+
+GPUS_PER_NODE=8
+
+HOSTNAME=$(hostname)
+MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
+MASTER_PORT=29500
+
+echo "-----------------------------"
+echo "Running on: $SLURM_NODELIST"
+echo "Master addr: ${MASTER_ADDR}:${MASTER_PORT}"
+echo "This node: $HOSTNAME"
+echo "SLURM_JOB_ID=$SLURM_JOB_ID"
+echo "HOST_NODE_ADDR: $MASTER_ADDR"
+echo "GPUS_PER_NODE: $GPUS_PER_NODE"
+echo "SLURM_NNODES: $SLURM_NNODES"
+echo "SLURM_PROCID: $SLURM_PROCID"
+echo "-----------------------------"
+
+
+VIDEO_FOLDER="/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/R2R","/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/RxR","/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/EnvDrop"
 
 LLM_VERSION="Qwen/Qwen2-7B-Instruct"
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
-VISION_MODEL_VERSION="google/siglip2-so400m-patch14-384"
+VISION_MODEL_VERSION="checkpoints/siglip2-so400m-patch14-384"
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 ############### Pretrain ################
 BASE_RUN_NAME="llavanext-google_siglip-so400m-patch14-384-Qwen_Qwen2-7B-Instruct-mlp2x_gelu-pretrain_blip558k_plain"
-echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 
 ############### Finetune ################
 PROMPT_VERSION="qwen_1_5"
 MID_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_1epoch_196token_8history_32frame"
-PREV_STAGE_CHECKPOINT="lmms-lab/LLaVA-Video-7B-Qwen2"
+PREV_STAGE_CHECKPOINT="checkpoints/LLaVA-Video-7B-Qwen2"
+
+
+echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 echo "PREV_STAGE_CHECKPOINT: ${PREV_STAGE_CHECKPOINT}"
 echo "MID_RUN_NAME: ${MID_RUN_NAME}"
+echo "-----------------------------"
 
-srun torchrun --nnodes=$SLURM_NNODES --nproc_per_node=8 \
-    --rdzv_id=$SLURM_JOB_ID --rdzv_backend=c10d --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT streamvln/streamvln_train.py \
+torchrun \
+    --nnodes=${SLURM_NNODES} \
+    --node_rank=${SLURM_PROCID} \
+    --nproc_per_node=${GPUS_PER_NODE} \
+    --master_addr=${MASTER_ADDR} \
+    --master_port=${MASTER_PORT} \
+    streamvln/streamvln_train.py \
     --deepspeed scripts/zero2.json \
     --model_name_or_path $PREV_STAGE_CHECKPOINT \
     --version $PROMPT_VERSION \
@@ -51,9 +74,9 @@ srun torchrun --nnodes=$SLURM_NNODES --nproc_per_node=8 \
     --run_name $MID_RUN_NAME \
     --output_dir checkpoints/$MID_RUN_NAME \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 2 \
+    --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 4 \
-    --gradient_accumulation_steps 2 \
+    --gradient_accumulation_steps 4 \
     --evaluation_strategy "no" \
     --save_strategy "epoch" \
     --save_total_limit 1 \
@@ -72,4 +95,4 @@ srun torchrun --nnodes=$SLURM_NNODES --nproc_per_node=8 \
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
-    --report_to wandb \
+    --report_to none \

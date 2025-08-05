@@ -216,13 +216,13 @@ class VLNEvaluator:
         
         # DEBUG
         # Using only one episode for debugging
-        # env.episodes = env.episodes[0:1]
+        env.episodes = env.episodes[0:1]
 
         return env
 
     def eval_action(self, idx) -> None:
 
-        # Building up the environment based on the configuration
+        # Building up the habitat environment based on the configuration
         env = self.config_env()
 
         # Get all the episodes rearranged by the scene_id
@@ -244,6 +244,8 @@ class VLNEvaluator:
         
 
         # Setup Result metrics
+        # Also record the previously done episodes
+        # so that we can skip the already done episodes
         sucs, spls, oss, ones = [], [], [], []
         done_res = []
         if os.path.exists(os.path.join(self.output_path, f'result.json')):
@@ -281,6 +283,7 @@ class VLNEvaluator:
 
             # Iterate through the episodes for the current scene
             # 每一个GPU处理自己的idx对应的episodes
+            # Here the iteration in episodes
             for episode in episodes[idx::self.env_num]:
 
                 # 如果是objectnav任务，则使用episode.object_category作为指令
@@ -339,9 +342,13 @@ class VLNEvaluator:
                 output_ids = None
 
                 # 当前的episode执行，退出条件就是当前episode执行完毕
+                # 在这边就是持续在当前的episode下面进行action操作
                 while not env.episode_over:
                     self.model.eval()
                     time_ids.append(step_id)
+
+                    ###########
+                    # 处理habitat的observation，model输入预处理
                     rgb = observations["rgb"]
                     depth = observations["depth"]
                     x, y = observations["gps"]
@@ -384,7 +391,6 @@ class VLNEvaluator:
                     # 之后可以参考我自己的habitat data collector的代码来看这个pose的变换关系
                     pose_list.append(torch.from_numpy(tf_camera_to_episodic) @ self.get_axis_align_matrix())
 
-
                     intrinsic_list.append(intrinsic)
                     
                     info = env.get_metrics()
@@ -398,7 +404,8 @@ class VLNEvaluator:
                     # 以上就是处理当前step的现有的状态信息，到达这里之后就是真正的开始进行inference输出action了
                     # import ipdb; ipdb.set_trace()
 
-
+                    # 只有action seq是空的情况下才会进行模型的generate
+                    # 如果action seq还保留上次generate出来的actions，那么直接跳过去执行action去
                     if len(action_seq) == 0:
                         if output_ids is None:
                             # 构建conversation
@@ -411,6 +418,7 @@ class VLNEvaluator:
                             sources[0]["value"] = sources[0]["value"].replace(DEFAULT_VIDEO_TOKEN+'\n', '')
                             
                             # 这里就把episode的instruction给扔进去了
+                            # 放的位置就是human的位置
                             sources[0]["value"] = sources[0]["value"].replace('<instruction>.', episode.instruction.instruction_text)
                             
                             # 然后add system设置了
@@ -510,6 +518,7 @@ class VLNEvaluator:
                             with open(os.path.join(self.output_path, f'check_sim_{self.epoch}', f'{scene_id}_{episode_id}.txt'), 'w') as f:
                                 f.write(' '.join(str(a) for a in action_seq_original))
                     # 到上面为止就是使用VLM输出动作序列的部分了，下面要干的事情就是，使用生成的动作序列在场景中进行运动
+                    # 每一次生成都会出来四个action动作，然后进行执行
                     ################################################################
 
                     # 从这里可以看出，不管输出了啥，这边都会执行
@@ -529,7 +538,8 @@ class VLNEvaluator:
                         output_ids = None
                         past_key_values = None
                         time_ids = []
-                        
+
+                # 当前的episode执行完毕，process bar往前走一步，然后开始统计这次episode的结果        
                 process_bar.update(1)
                 # episode_id += 1
                 metrics = env.get_metrics()
