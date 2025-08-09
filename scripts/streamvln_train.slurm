@@ -6,8 +6,6 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem-per-cpu=16G
 #SBATCH --reservation=laser
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=jjiang127@connect.hkust-gz.edu.cn
 #SBATCH --output=log/streamvln-%j.out
 #SBATCH --error=log/streamvln-%j.err
 

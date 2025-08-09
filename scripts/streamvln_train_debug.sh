@@ -1,33 +1,51 @@
 #!/bin/bash
-#SBATCH --job-name=blip3o    # Job name
-#SBATCH --nodes=4                          # Number of nodes
-#SBATCH --gres=gpu:8                         # Number of GPUs per node
-#SBATCH --time=96:00:00                      # Time limit (hh:mm:ss)
 
-export HF_HOME=/HF/Home/
-MASTER_ADDR=`scontrol show hostname $SLURM_JOB_NODELIST | head -n1`
-MASTER_PORT=$((RANDOM % 101 + 20001))
+# Activate conda environment
+source /home/jiangjiajun/miniconda3/etc/profile.d/conda.sh
+conda activate streamvln
 
-VIDEO_FOLDER="data/trajectory_data/R2R","data/trajectory_data/RxR","data/trajectory_data/EnvDrop"
+# HuggingFace Cache
+export HF_HOME=/shared_space/jiangjiajun/hf_cache
+
+# Set GPU usage
+GPUS_PER_NODE=1  # 改成你本机 GPU 数量（如你只有1块卡，可以写1）
+
+# Set distributed training env (local-only)
+MASTER_ADDR=localhost
+MASTER_PORT=29500  # 避免端口冲突，改成你当前空闲的端口
+NNODES=1
+NODE_RANK=0
+
+VIDEO_FOLDER="/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/R2R,/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/RxR,/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/EnvDrop"
 
 LLM_VERSION="Qwen/Qwen2-7B-Instruct"
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
-VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
+VISION_MODEL_VERSION="checkpoints/siglip-so400m-patch14-384"
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
-############### Pretrain ################
 BASE_RUN_NAME="llavanext-google_siglip-so400m-patch14-384-Qwen_Qwen2-7B-Instruct-mlp2x_gelu-pretrain_blip558k_plain"
-echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
-
-############### Finetune ################
 PROMPT_VERSION="qwen_1_5"
-MID_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_1epoch_196token_8history_32frame"
-PREV_STAGE_CHECKPOINT="lmms-lab/LLaVA-Video-7B-Qwen2"
+MID_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_1epoch_196token_8history_32frame_wandb-2"
+PREV_STAGE_CHECKPOINT="checkpoints/LLaVA-Video-7B-Qwen2"
+
+# wandb settings
+export WANDB_PROJECT=StreamVLN
+export WANDB_NAME=$MID_RUN_NAME
+export WANDB_ENTITY=jjiang127-hkust
+export WANDB_DIR=/shared_space/jiangjiajun/wandb_logs
+
+echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 echo "PREV_STAGE_CHECKPOINT: ${PREV_STAGE_CHECKPOINT}"
 echo "MID_RUN_NAME: ${MID_RUN_NAME}"
+echo "-----------------------------"
 
-srun torchrun --nnodes=$SLURM_NNODES --nproc_per_node=8 \
-    --rdzv_id=$SLURM_JOB_ID --rdzv_backend=c10d --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT streamvln/streamvln_train.py \
+torchrun \
+    --nnodes=${NNODES} \
+    --node_rank=${NODE_RANK} \
+    --nproc_per_node=${GPUS_PER_NODE} \
+    --master_addr=${MASTER_ADDR} \
+    --master_port=${MASTER_PORT} \
+    streamvln/streamvln_train.py \
     --deepspeed scripts/zero2.json \
     --model_name_or_path $PREV_STAGE_CHECKPOINT \
     --version $PROMPT_VERSION \
@@ -51,9 +69,9 @@ srun torchrun --nnodes=$SLURM_NNODES --nproc_per_node=8 \
     --run_name $MID_RUN_NAME \
     --output_dir checkpoints/$MID_RUN_NAME \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 2 \
+    --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 4 \
-    --gradient_accumulation_steps 2 \
+    --gradient_accumulation_steps 4 \
     --evaluation_strategy "no" \
     --save_strategy "epoch" \
     --save_total_limit 1 \
@@ -72,4 +90,4 @@ srun torchrun --nnodes=$SLURM_NNODES --nproc_per_node=8 \
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
-    --report_to wandb \
+    --report_to wandb

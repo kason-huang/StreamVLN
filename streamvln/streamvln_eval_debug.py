@@ -216,6 +216,7 @@ class VLNEvaluator:
         
         # DEBUG
         # Using only one episode for debugging
+        env.episodes = env.episodes[0:1]
 
         return env
 

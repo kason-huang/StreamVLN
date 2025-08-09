@@ -27,7 +27,7 @@ VIDEO_FOLDER="/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/
 
 LLM_VERSION="Qwen/Qwen2-7B-Instruct"
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
-VISION_MODEL_VERSION="checkpoints/siglip2-so400m-patch14-384"
+VISION_MODEL_VERSION="checkpoints/siglip-so400m-patch14-384"
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 ############### Pretrain ################
@@ -35,8 +35,14 @@ BASE_RUN_NAME="llavanext-google_siglip-so400m-patch14-384-Qwen_Qwen2-7B-Instruct
 
 ############### Finetune ################
 PROMPT_VERSION="qwen_1_5"
-MID_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_1epoch_196token_8history_32frame"
+MID_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_1epoch_196token_8history_32frame_wandb"
 PREV_STAGE_CHECKPOINT="checkpoints/LLaVA-Video-7B-Qwen2"
+
+# wandb settings
+export WANDB_PROJECT=StreamVLN
+export WANDB_NAME=$MID_RUN_NAME
+export WANDB_ENTITY=jjiang127-hkust
+export WANDB_DIR=/shared_space/jiangjiajun/wandb_logs
 
 
 echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
@@ -95,4 +101,4 @@ torchrun \
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
-    --report_to none \
+    --report_to wandb \
