@@ -11,6 +11,8 @@ HOSTNAME=$(hostname)
 MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
 MASTER_PORT=29500
 
+# export NCCL_IB_HCA=ibp12s0
+
 echo "-----------------------------"
 echo "Running on: $SLURM_NODELIST"
 echo "Master addr: ${MASTER_ADDR}:${MASTER_PORT}"
@@ -35,7 +37,7 @@ BASE_RUN_NAME="llavanext-google_siglip-so400m-patch14-384-Qwen_Qwen2-7B-Instruct
 
 ############### Finetune ################
 PROMPT_VERSION="qwen_1_5"
-MID_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_1epoch_196token_8history_32frame_wandb"
+MID_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_1epoch_196token_8history_32frame_128batchsize_4nodes"
 PREV_STAGE_CHECKPOINT="checkpoints/LLaVA-Video-7B-Qwen2"
 
 # wandb settings
