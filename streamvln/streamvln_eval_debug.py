@@ -214,8 +214,7 @@ class VLNEvaluator:
     def config_env(self) -> Env:
         env = Env(config=self.config)
         
-        # DEBUG
-        # Using only one episode for debugging
+        # DEBUG: Using only one episode for debugging
         env.episodes = env.episodes[0:1]
 
         return env
@@ -278,7 +277,8 @@ class VLNEvaluator:
 
             # episode_id = 0
             # 对episodes进行切片，将episodes按照env_num进行分割，不同GPU对应的idx获取相应的episodes
-            # 所以就是在这里进行了episodes的分割啊
+            # 所以就是在这里进行了episodes的分割啊，然后每一个GPU就分配到了他对应的episode的数量
+            # idx::self.env_num 代表从第 idx 个环境开始，每隔 self.env_num 取一个，所以拿到的就是 某个环境对应的所有 episode
             process_bar = tqdm.tqdm(range(len(episodes[idx::self.env_num])), desc=f"scene {scene_id}")
 
             # Iterate through the episodes for the current scene
@@ -402,15 +402,19 @@ class VLNEvaluator:
 
                     # ==============================================================
                     # 以上就是处理当前step的现有的状态信息，到达这里之后就是真正的开始进行inference输出action了
-                    # import ipdb; ipdb.set_trace()
+
+                    import ipdb; ipdb.set_trace()
 
                     # 只有action seq是空的情况下才会进行模型的generate
                     # 如果action seq还保留上次generate出来的actions，那么直接跳过去执行action去
+                    # 因为我们现在有的模型还是一次inference输出四个动作的形式来去做的
                     if len(action_seq) == 0:
+                        # 如果是第一次，very beginning
                         if output_ids is None:
                             # 构建conversation
                             sources = copy.deepcopy(self.conversation)
                             sources[0]["value"] = sources[0]["value"].replace(' Where should you go next to stay on track?', f' Please devise an action sequence to follow the instruction which may include turning left or right by a certain degree, moving forward by a certain distance or stopping once the task is complete.')
+                            # 如果短期记忆被清理了，这边需要增加上memory的表示
                             if step_id != 0 :
                                 sources[0]["value"] += f' These are your historical observations {DEFAULT_MEMORY_TOKEN}.'
                             
@@ -430,22 +434,23 @@ class VLNEvaluator:
                             sources = [{"from": "human", "value": ""}, {"from": "gpt", "value": ""}]
                             add_system = False
                         
-                        # 这里应该是处理成qwen所需要的输入
+                        # 这里是处理成qwen所需要的输入
                         # 这里处理对话的prompt，将prompt变成token id作为input id
-                        # 然后将prompt中需要嵌入image和memory的地方替换成相对应的idx
+                        # 然后将prompt中需要嵌入image和memory的地方替换成相对应的default tokens
                         input_ids, conversations = self.preprocess_qwen([sources], self.tokenizer, True, add_system=add_system)
                         
                         
                         if output_ids is not None:
                             input_ids = torch.cat([output_ids,input_ids.to(output_ids.device)], dim=1)
 
-                        # 获取最新的一帧rgb
+                        # 获取最新的一帧rgb的list
                         images = rgb_list[-1:]
                         depths = depth_list[-1:]
                         poses = pose_list[-1:]
                         intrinsics = intrinsic_list[-1:]
 
                         # import ipdb; ipdb.set_trace()
+
                         # 如果是第一次，那么step_id == 0 下面的判断不会进入
                         # num_frames是32
                         if step_id != 0 and step_id % self.num_frames == 0:
@@ -470,6 +475,7 @@ class VLNEvaluator:
                                 input_dict[key] = input_dict[key].to(torch.bfloat16)
                         
                         ## TODO: 进一步去分析generate里面的设计
+                        ## 此处就是使用已经训练好的模型进行generate
                         outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
                         
                         # 也就是他们经过训练之后的大模型才会吐出这样的输出
@@ -487,6 +493,7 @@ class VLNEvaluator:
                         print(llm_outputs, flush=True)
 
                         # 将输出重置生成的action序列 list
+                        # 或者说，将输出的序列规范成habitat能听懂的动作序列
                         ## action_seq: [3, 1, 2, 1]
                         action_seq = self.parse_actions(llm_outputs)
                         print('actions', action_seq, flush=True)
@@ -518,6 +525,7 @@ class VLNEvaluator:
                             with open(os.path.join(self.output_path, f'check_sim_{self.epoch}', f'{scene_id}_{episode_id}.txt'), 'w') as f:
                                 f.write(' '.join(str(a) for a in action_seq_original))
                     # 到上面为止就是使用VLM输出动作序列的部分了，下面要干的事情就是，使用生成的动作序列在场景中进行运动
+                    # 也就是在habitat sim中去执行这些actions
                     # 每一次生成都会出来四个action动作，然后进行执行
                     ################################################################
 
@@ -534,6 +542,7 @@ class VLNEvaluator:
                     # 然后在执行32次action，模型generate 8次 之后 对整体进行一次reset
                     # 然后在执行的过程中，每次的图像都会存下来
                     if step_id % self.num_frames == 0:
+                        # TODO: 这里的reset_for_env是什么意思？是否清空了历史的信息？
                         self.model.reset_for_env(idx)
                         output_ids = None
                         past_key_values = None
@@ -639,6 +648,7 @@ class VLNEvaluator:
                 source[0]["value"] += f" {prompt}."
             else: 
                 source[0]["value"] = f"{prompt}."
+            
             if roles[source[0]["from"]] != roles["human"]:
                 # Skip the first one if it is not from human
                 source = source[1:]
@@ -649,6 +659,7 @@ class VLNEvaluator:
             input_id, target = [], []
 
             # import ipdb; ipdb.set_trace()
+
             # New version, use apply chat template
             # Build system message for each sentence
             # 如果是true的话，那么会增加上system的token，也就是you are a helpful assistant.
