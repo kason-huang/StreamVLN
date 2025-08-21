@@ -55,6 +55,10 @@ from streamvln.model.stream_video_vln import StreamVLNForCausalLM
 from streamvln.dataset.vln_action_dataset import collate_fn, VLNActionDataset
 
 from streamvln.utils.utils import ANSWER_LIST, DEFAULT_IMAGE_TOKEN, IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_MEMORY_TOKEN, MEMORY_TOKEN_INDEX, DEFAULT_VIDEO_TOKEN
+
+
+
+
 torch.multiprocessing.set_sharing_strategy("file_system")
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True

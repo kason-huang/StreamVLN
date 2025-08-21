@@ -12,7 +12,7 @@ import itertools
 import quaternion
 import transformers
 import numpy as np
-import pdb
+import time
 
 from typing import Any
 from omegaconf import OmegaConf
@@ -39,6 +39,8 @@ from model.stream_video_vln import StreamVLNForCausalLM
 from utils.utils import dict_to_cuda
 from utils.dist import *
 from utils.utils import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX, DEFAULT_MEMORY_TOKEN, MEMORY_TOKEN_INDEX, DEFAULT_VIDEO_TOKEN
+
+from utils.time_utils import timing_context
 
 class VLNEvaluator:
     def __init__(
@@ -246,6 +248,10 @@ class VLNEvaluator:
         # Also record the previously done episodes
         # so that we can skip the already done episodes
         sucs, spls, oss, ones = [], [], [], []
+
+        ## Add my own recording params
+        all_time, model_time, token_time = [], [], []
+        
         done_res = []
         if os.path.exists(os.path.join(self.output_path, f'result.json')):
             with open(os.path.join(self.output_path, f'result.json'),'r') as f:
@@ -260,7 +266,10 @@ class VLNEvaluator:
                         spls.append(res['spl'])
                         oss.append(res['os'])
                         ones.append(res['ne'])
-        
+                        all_time.append(res['all_time'])
+                        model_time.append(res['model_time'])
+                        token_time.append(res['token_time'])
+
         for scene in sorted(scene_episode_dict.keys()):
             
             # scene is the DIR PATH of the scene glb
@@ -341,6 +350,9 @@ class VLNEvaluator:
                 past_key_values = None
                 output_ids = None
 
+                # set time calculation
+                episode_start_time = time.time()
+
                 # 当前的episode执行，退出条件就是当前episode执行完毕
                 # 在这边就是持续在当前的episode下面进行action操作
                 while not env.episode_over:
@@ -403,7 +415,7 @@ class VLNEvaluator:
                     # ==============================================================
                     # 以上就是处理当前step的现有的状态信息，到达这里之后就是真正的开始进行inference输出action了
 
-                    import ipdb; ipdb.set_trace()
+                    # import ipdb; ipdb.set_trace()
 
                     # 只有action seq是空的情况下才会进行模型的generate
                     # 如果action seq还保留上次generate出来的actions，那么直接跳过去执行action去
@@ -437,7 +449,8 @@ class VLNEvaluator:
                         # 这里是处理成qwen所需要的输入
                         # 这里处理对话的prompt，将prompt变成token id作为input id
                         # 然后将prompt中需要嵌入image和memory的地方替换成相对应的default tokens
-                        input_ids, conversations = self.preprocess_qwen([sources], self.tokenizer, True, add_system=add_system)
+                        with timing_context('preprocess_qwen', self, 'timing_results'):
+                            input_ids, conversations = self.preprocess_qwen([sources], self.tokenizer, True, add_system=add_system)
                         
                         
                         if output_ids is not None:
@@ -476,7 +489,8 @@ class VLNEvaluator:
                         
                         ## TODO: 进一步去分析generate里面的设计
                         ## 此处就是使用已经训练好的模型进行generate
-                        outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+                        with timing_context('model_generate', self, 'timing_results'):
+                            outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
                         
                         # 也就是他们经过训练之后的大模型才会吐出这样的输出
                         output_ids = outputs.sequences
@@ -548,6 +562,13 @@ class VLNEvaluator:
                         past_key_values = None
                         time_ids = []
 
+                # set time end of one episode
+                episode_end_time = time.time()
+
+                # get the total test time
+                episode_all_time = episode_end_time - episode_start_time
+                print(f"Total test time for episode {episode_id}: {episode_all_time:.2f} seconds")
+
                 # 当前的episode执行完毕，process bar往前走一步，然后开始统计这次episode的结果        
                 process_bar.update(1)
                 # episode_id += 1
@@ -562,6 +583,7 @@ class VLNEvaluator:
                 oss.append(metrics['oracle_success'])
                 ones.append(metrics['distance_to_goal'])
                 print(f"scene_episode {scene_id}_{episode_id} success: {metrics['success']}, spl: {metrics['spl']}, os: {metrics['oracle_success']}, ne: {metrics['distance_to_goal']}")
+                
                 result = {
                     "scene_id": scene_id,
                     "episode_id": episode_id,
@@ -577,7 +599,7 @@ class VLNEvaluator:
                     f.write(json.dumps(result) + "\n")
 
         env.close()
-        return torch.tensor(sucs).to(self.device), torch.tensor(spls).to(self.device), torch.tensor(oss).to(self.device), torch.tensor(ones).to(self.device), torch.tensor(len(sucs)).to(self.device)     
+        return torch.tensor(sucs).to(self.device), torch.tensor(spls).to(self.device), torch.tensor(oss).to(self.device), torch.tensor(ones).to(self.device), torch.tensor(len(sucs)).to(self.device)   
 
     def parse_actions(self, output):
         action_patterns = '|'.join(re.escape(action) for action in self.actions2idx)

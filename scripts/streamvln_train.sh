@@ -13,6 +13,13 @@ MASTER_PORT=29500
 
 # export NCCL_IB_HCA=ibp12s0
 
+export NCCL_DEBUG=INFO
+
+export NCCL_BUFFSIZE=2097152
+# export NCCL_BUFFSIZE=3145728
+
+export NCCL_MAX_NCHANNELS=16
+
 echo "-----------------------------"
 echo "Running on: $SLURM_NODELIST"
 echo "Master addr: ${MASTER_ADDR}:${MASTER_PORT}"
@@ -103,4 +110,4 @@ torchrun \
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
-    --report_to wandb \
+    --report_to none \
