@@ -217,7 +217,7 @@ class VLNEvaluator:
         env = Env(config=self.config)
         
         # DEBUG: Using only one episode for debugging
-        env.episodes = env.episodes[0:1]
+        # env.episodes = env.episodes[0:1]
 
         return env
 
@@ -249,9 +249,6 @@ class VLNEvaluator:
         # so that we can skip the already done episodes
         sucs, spls, oss, ones = [], [], [], []
 
-        ## Add my own recording params
-        all_time, model_time, token_time = [], [], []
-        
         done_res = []
         if os.path.exists(os.path.join(self.output_path, f'result.json')):
             with open(os.path.join(self.output_path, f'result.json'),'r') as f:
@@ -266,9 +263,6 @@ class VLNEvaluator:
                         spls.append(res['spl'])
                         oss.append(res['os'])
                         ones.append(res['ne'])
-                        all_time.append(res['all_time'])
-                        model_time.append(res['model_time'])
-                        token_time.append(res['token_time'])
 
         for scene in sorted(scene_episode_dict.keys()):
             
@@ -356,61 +350,64 @@ class VLNEvaluator:
                 # 当前的episode执行，退出条件就是当前episode执行完毕
                 # 在这边就是持续在当前的episode下面进行action操作
                 while not env.episode_over:
-                    self.model.eval()
-                    time_ids.append(step_id)
-
-                    ###########
-                    # 处理habitat的observation，model输入预处理
-                    rgb = observations["rgb"]
-                    depth = observations["depth"]
-                    x, y = observations["gps"]
-                    camera_yaw = observations["compass"][0]
-                    depth = filter_depth(depth.reshape(depth.shape[:2]), blur_type=None)
-                    depth = depth * (self._max_depth - self._min_depth) + self._min_depth
-                    depth = depth * 1000
-
-                    agent_state = env.sim.get_agent_state()
-                    height = agent_state.position[1] - initial_height # Habitat GPS makes west negative, so flip y
-                    camera_position = np.array([x, -y, self._camera_height + height])
-                    robot_xy = camera_position[:2]
-
-                    # 获取T，这应该是给depth pruning用的
-                    tf_camera_to_episodic = self.xyz_yaw_to_tf_matrix(camera_position, camera_yaw)
                     
-                    # Pose: Agent to world
-                    rotation = agent_state.rotation
-                    translation = agent_state.position
-                    rotation_matrix = quaternion.as_rotation_matrix(rotation)
-                    transformation_matrix = np.eye(4)
-                    transformation_matrix[:3, :3] = rotation_matrix
-                    transformation_matrix[:3, 3] = translation
-                    
-                    image = Image.fromarray(rgb).convert('RGB')
-                    image_size = image.size
-                    # image = self.image_processor.preprocess(images=image, do_rescale=True, do_normalize=True, return_tensors='pt')['pixel_values'][0]
-                    image = self.image_processor.preprocess(images=image, return_tensors='pt')['pixel_values'][0]
-                    depth_image, resize_shape = self.preprocess_depth_image(Image.fromarray(depth.astype(np.uint16), mode='I;16'), do_depth_scale=True)
-                    
-                    # 因为resize了depth的shape，所以这里intrinsics也需要重新计算
-                    intrinsic = self.preprocess_instrinsic(intrinsic_matrix, image_size, resize_shape)
-                    intrinsic = torch.from_numpy(intrinsic).float()
-    
-                    rgb_list.append(image)
-                    depth_list.append(torch.from_numpy(depth_image).float())
 
-                    # TODO: 此处乘法存疑，这里的pose处理存疑
-                    # 之后参考这里：https://github.com/Eku127/habitat-data-collector/blob/fc986ababcc57b361b7f640f5824cf083415796e/habitat_data_collector/utils/ros_data_collector.py#L157C13-L157C29
-                    # 之后可以参考我自己的habitat data collector的代码来看这个pose的变换关系
-                    pose_list.append(torch.from_numpy(tf_camera_to_episodic) @ self.get_axis_align_matrix())
+                    with timing_context('input_preprocess', self, 'timing_results'):
+                        self.model.eval()
+                        time_ids.append(step_id)
+                        
+                        ###########
+                        # 处理habitat的observation，model输入预处理
+                        rgb = observations["rgb"]
+                        depth = observations["depth"]
+                        x, y = observations["gps"]
+                        camera_yaw = observations["compass"][0]
+                        depth = filter_depth(depth.reshape(depth.shape[:2]), blur_type=None)
+                        depth = depth * (self._max_depth - self._min_depth) + self._min_depth
+                        depth = depth * 1000
 
-                    intrinsic_list.append(intrinsic)
-                    
-                    info = env.get_metrics()
+                        agent_state = env.sim.get_agent_state()
+                        height = agent_state.position[1] - initial_height # Habitat GPS makes west negative, so flip y
+                        camera_position = np.array([x, -y, self._camera_height + height])
+                        robot_xy = camera_position[:2]
 
-                    # 构造一个vis_frames的图像用来视频可视化
-                    if info['top_down_map'] is not None:
-                        frame = observations_to_image({'rgb':observations['rgb']}, info)
-                        vis_frames.append(frame)
+                        # 获取T，这应该是给depth pruning用的
+                        tf_camera_to_episodic = self.xyz_yaw_to_tf_matrix(camera_position, camera_yaw)
+                        
+                        # Pose: Agent to world
+                        rotation = agent_state.rotation
+                        translation = agent_state.position
+                        rotation_matrix = quaternion.as_rotation_matrix(rotation)
+                        transformation_matrix = np.eye(4)
+                        transformation_matrix[:3, :3] = rotation_matrix
+                        transformation_matrix[:3, 3] = translation
+                        
+                        image = Image.fromarray(rgb).convert('RGB')
+                        image_size = image.size
+                        # image = self.image_processor.preprocess(images=image, do_rescale=True, do_normalize=True, return_tensors='pt')['pixel_values'][0]
+                        image = self.image_processor.preprocess(images=image, return_tensors='pt')['pixel_values'][0]
+                        depth_image, resize_shape = self.preprocess_depth_image(Image.fromarray(depth.astype(np.uint16), mode='I;16'), do_depth_scale=True)
+                        
+                        # 因为resize了depth的shape，所以这里intrinsics也需要重新计算
+                        intrinsic = self.preprocess_instrinsic(intrinsic_matrix, image_size, resize_shape)
+                        intrinsic = torch.from_numpy(intrinsic).float()
+        
+                        rgb_list.append(image)
+                        depth_list.append(torch.from_numpy(depth_image).float())
+
+                        # TODO: 此处乘法存疑，这里的pose处理存疑
+                        # 之后参考这里：https://github.com/Eku127/habitat-data-collector/blob/fc986ababcc57b361b7f640f5824cf083415796e/habitat_data_collector/utils/ros_data_collector.py#L157C13-L157C29
+                        # 之后可以参考我自己的habitat data collector的代码来看这个pose的变换关系
+                        pose_list.append(torch.from_numpy(tf_camera_to_episodic) @ self.get_axis_align_matrix())
+
+                        intrinsic_list.append(intrinsic)
+                        
+                        info = env.get_metrics()
+
+                        # 构造一个vis_frames的图像用来视频可视化
+                        if info['top_down_map'] is not None:
+                            frame = observations_to_image({'rgb':observations['rgb']}, info)
+                            vis_frames.append(frame)
 
                     # ==============================================================
                     # 以上就是处理当前step的现有的状态信息，到达这里之后就是真正的开始进行inference输出action了
@@ -449,49 +446,57 @@ class VLNEvaluator:
                         # 这里是处理成qwen所需要的输入
                         # 这里处理对话的prompt，将prompt变成token id作为input id
                         # 然后将prompt中需要嵌入image和memory的地方替换成相对应的default tokens
-                        with timing_context('preprocess_qwen', self, 'timing_results'):
+                        with timing_context('template_tokenization', self, 'timing_results'):
                             input_ids, conversations = self.preprocess_qwen([sources], self.tokenizer, True, add_system=add_system)
                         
                         
-                        if output_ids is not None:
-                            input_ids = torch.cat([output_ids,input_ids.to(output_ids.device)], dim=1)
+                            if output_ids is not None:
+                                input_ids = torch.cat([output_ids,input_ids.to(output_ids.device)], dim=1)
 
-                        # 获取最新的一帧rgb的list
-                        images = rgb_list[-1:]
-                        depths = depth_list[-1:]
-                        poses = pose_list[-1:]
-                        intrinsics = intrinsic_list[-1:]
+                        with timing_context('model_input_preprocess', self, 'timing_results'):
+                            # 获取最新的一帧rgb的list
+                            images = rgb_list[-1:]
+                            depths = depth_list[-1:]
+                            poses = pose_list[-1:]
+                            intrinsics = intrinsic_list[-1:]
 
-                        # import ipdb; ipdb.set_trace()
+                            # import ipdb; ipdb.set_trace()
 
-                        # 如果是第一次，那么step_id == 0 下面的判断不会进入
-                        # num_frames是32
-                        if step_id != 0 and step_id % self.num_frames == 0:
-                            if self.num_history is None:
-                                history_ids = slice(0, time_ids[0], self.num_future_steps)
-                            else:
-                                history_ids = slice(0, time_ids[0], (time_ids[0] // self.num_history))
-                            images = rgb_list[history_ids] + images
-                            depths = depth_list[history_ids] + depths
-                            poses = pose_list[history_ids] + poses
-                            intrinsics = intrinsic_list[history_ids] + intrinsics
-                        
-                        # 输入mock成为dict
-                        input_dict = {'images':torch.stack(images).unsqueeze(0), 'depths':torch.stack(depths).unsqueeze(0), \
-                                        'poses':torch.stack(poses).unsqueeze(0), 'intrinsics':torch.stack(intrinsics).unsqueeze(0), 'inputs':input_ids, 'env_id':idx, 'time_ids':[time_ids],'task_type':[0]}
+                            # 如果是第一次，那么step_id == 0 下面的判断不会进入
+                            # num_frames是32
+                            if step_id != 0 and step_id % self.num_frames == 0:
+                                if self.num_history is None:
+                                    history_ids = slice(0, time_ids[0], self.num_future_steps)
+                                else:
+                                    history_ids = slice(0, time_ids[0], (time_ids[0] // self.num_history))
+                                images = rgb_list[history_ids] + images
+                                depths = depth_list[history_ids] + depths
+                                poses = pose_list[history_ids] + poses
+                                intrinsics = intrinsic_list[history_ids] + intrinsics
                             
-                        input_dict = dict_to_cuda(input_dict, self.device)
-                        
-                        # 将输入的图像和深度图像转换为bfloat16张量格式
-                        for key, value in input_dict.items():
-                            if key in ['images', 'depths', 'poses', 'intrinsics']:
-                                input_dict[key] = input_dict[key].to(torch.bfloat16)
+                            # 输入mock成为dict
+                            input_dict = {'images':torch.stack(images).unsqueeze(0), 'depths':torch.stack(depths).unsqueeze(0), \
+                                            'poses':torch.stack(poses).unsqueeze(0), 'intrinsics':torch.stack(intrinsics).unsqueeze(0), 'inputs':input_ids, 'env_id':idx, 'time_ids':[time_ids],'task_type':[0]}
+                                
+                            input_dict = dict_to_cuda(input_dict, self.device)
+                            
+                            # 将输入的图像和深度图像转换为bfloat16张量格式
+                            for key, value in input_dict.items():
+                                if key in ['images', 'depths', 'poses', 'intrinsics']:
+                                    input_dict[key] = input_dict[key].to(torch.bfloat16)
                         
                         ## TODO: 进一步去分析generate里面的设计
                         ## 此处就是使用已经训练好的模型进行generate
-                        with timing_context('model_generate', self, 'timing_results'):
-                            outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
-                        
+                        # with timing_context('model_generate', self, 'timing_results'):
+                        #     outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+
+                        if step_id == 0 or step_id % self.num_frames == 0:
+                            with timing_context('model_generate_long', self, 'timing_results'):
+                                outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+                        else:
+                            with timing_context('model_generate_short', self, 'timing_results'):
+                                outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+
                         # 也就是他们经过训练之后的大模型才会吐出这样的输出
                         output_ids = outputs.sequences
 
@@ -503,7 +508,8 @@ class VLNEvaluator:
                         # 使用tokenizer反解成文本
                         ## output_ids: tensor([[151644,  77091,    198,  51018,  76286,  71858,  76286, 151645]], device='cuda:0')
                         ## llm_outputs: '<|im_start|>assistant\n→↑←↑<|im_end|>'
-                        llm_outputs = self.tokenizer.batch_decode(output_ids, skip_special_tokens=False)[0].strip()
+                        with timing_context('decode', self, 'timing_results'):
+                            llm_outputs = self.tokenizer.batch_decode(output_ids, skip_special_tokens=False)[0].strip()
                         print(llm_outputs, flush=True)
 
                         # 将输出重置生成的action序列 list
@@ -543,12 +549,14 @@ class VLNEvaluator:
                     # 每一次生成都会出来四个action动作，然后进行执行
                     ################################################################
 
-                    # 从这里可以看出，不管输出了啥，这边都会执行
-                    # 所以每一次generate都会生成未来四次的动作序列
-                    action = action_seq.pop(0)
-                    
-                    # 场景执行action
-                    observations = env.step(action)
+
+                    with timing_context('env_step', self, 'timing_results'):
+                        # 从这里可以看出，不管输出了啥，这边都会执行
+                        # 所以每一次generate都会生成未来四次的动作序列
+                        action = action_seq.pop(0)
+                        
+                        # 场景执行action
+                        observations = env.step(action)
 
                     # 所以每一次模型进行generate，都会产生四个step id，然后执行操作
                     step_id += 1
@@ -567,7 +575,7 @@ class VLNEvaluator:
 
                 # get the total test time
                 episode_all_time = episode_end_time - episode_start_time
-                print(f"Total test time for episode {episode_id}: {episode_all_time:.2f} seconds")
+                print(f"Total inference time for episode {episode_id}: {episode_all_time:.2f} seconds")
 
                 # 当前的episode执行完毕，process bar往前走一步，然后开始统计这次episode的结果        
                 process_bar.update(1)
@@ -584,6 +592,15 @@ class VLNEvaluator:
                 ones.append(metrics['distance_to_goal'])
                 print(f"scene_episode {scene_id}_{episode_id} success: {metrics['success']}, spl: {metrics['spl']}, os: {metrics['oracle_success']}, ne: {metrics['distance_to_goal']}")
                 
+                # 统计所有的耗时情况
+                time_summary = {
+                    key: {
+                        "sum": sum(times),
+                        "avg": sum(times) / len(times) if times else 0
+                    }
+                    for key, times in self.timing_results.items()
+                }
+
                 result = {
                     "scene_id": scene_id,
                     "episode_id": episode_id,
@@ -592,8 +609,19 @@ class VLNEvaluator:
                     "os": metrics['oracle_success'],
                     "ne": metrics["distance_to_goal"],
                     "steps": step_id,
+                    "t_total": episode_all_time,
+                    "t_input_preprocess": time_summary["input_preprocess"]["sum"],
+                    "t_model_encode_sum": time_summary["template_tokenization"]["sum"],
+                    "t_model_input_preprocess": time_summary["model_input_preprocess"]["sum"],
+                    "t_model_long_sum": time_summary["model_generate_long"]["sum"],
+                    "t_model_short_sum": time_summary["model_generate_short"]["sum"],
+                    "t_model_decode_sum": time_summary["decode"]["sum"],
+                    "t_env_step_sum": time_summary["env_step"]["sum"],
                     "episode_instruction": episode_instruction
                 }
+
+                # clear the timing results
+                self.timing_results = {key: [] for key in self.timing_results.keys()}
                 
                 with open(os.path.join(self.output_path, f'result.json'), 'a') as f:
                     f.write(json.dumps(result) + "\n")
