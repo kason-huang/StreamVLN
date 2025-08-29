@@ -13,11 +13,9 @@ MASTER_PORT=29500
 
 # export NCCL_IB_HCA=ibp12s0
 
+# If trainning using 4 nodes
 export NCCL_DEBUG=INFO
-
-export NCCL_BUFFSIZE=2097152
-# export NCCL_BUFFSIZE=3145728
-
+export NCCL_BUFFSIZE=3145728
 export NCCL_MAX_NCHANNELS=16
 
 echo "-----------------------------"
@@ -44,7 +42,7 @@ BASE_RUN_NAME="llavanext-google_siglip-so400m-patch14-384-Qwen_Qwen2-7B-Instruct
 
 ############### Finetune ################
 PROMPT_VERSION="qwen_1_5"
-MID_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_1epoch_196token_8history_32frame_128batchsize_4nodes"
+MID_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_1epoch_196token_8history_32frame_128batchsize_refined"
 PREV_STAGE_CHECKPOINT="checkpoints/LLaVA-Video-7B-Qwen2"
 
 # wandb settings
@@ -110,4 +108,4 @@ torchrun \
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
-    --report_to none \
+    --report_to wandb \

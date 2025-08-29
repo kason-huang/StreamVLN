@@ -17,5 +17,5 @@ torchrun \
     --master_port=$MASTER_PORT \
     streamvln/streamvln_eval_debug.py \
     --model_path $CHECKPOINT \
-    --habitat_config_path config/vln_r2r_v1.yaml \
+    --habitat_config_path config/vln_r2r_v1_3.yaml \
     --output_path './results/val_unseen/StreamVLN_debug' \

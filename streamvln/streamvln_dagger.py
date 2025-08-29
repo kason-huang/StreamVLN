@@ -64,7 +64,7 @@ class StreamVLNDAggerCollector:
         self.output_path = self.args.dagger_output_path
         self.data_path = self.args.dagger_data_path
         self.config = get_habitat_config(args.habitat_config_path)
-        print(OmegaConf.to_yaml(self.config))
+        # print(OmegaConf.to_yaml(self.config))
 
         with open(self.args.dagger_gt_annotations_path, "r") as f:
             self.gt_annotations = json.load(f)
@@ -97,6 +97,7 @@ class StreamVLNDAggerCollector:
             "update_size": self.args.dagger_update_size,
             "commit_freq": self.args.dagger_commit_freq,
         })
+        print("This is the dagger config:")
         print(self.dagger_config)
         
         sim_sensors_cfg = self.config.habitat.simulator.agents.main_agent.sim_sensors
@@ -109,6 +110,8 @@ class StreamVLNDAggerCollector:
         # self.R = np.array([[0, 0, 1, 0], [-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]])
 
     def config_env(self, scene=None) -> habitat.Env:
+
+        # This is the palce to update the data path
         if self.data_path is not None:
             with read_write(self.config):
                 self.config.habitat.dataset.data_path = self.data_path
@@ -168,6 +171,8 @@ class StreamVLNDAggerCollector:
         episode_id = int(episode.episode_id)
         trajectory_id = episode.trajectory_id
         instructions = episode.instruction.instruction_text
+
+        # This path includes the goal point
         ref_path = episode.reference_path
 
         observation = env.reset()
@@ -198,11 +203,14 @@ class StreamVLNDAggerCollector:
         metrics = None
         accumulated_error = 0 
 
+        # Here the gt annotations are the data collected by the streamvln, saved in trajectory_data folder, id refers to the episode id
         ref_actions_len = next((len(annot["actions"]) for annot in self.gt_annotations if int(episode_id) == annot["id"]), DEFAULT_EPISODE_LENGTH)
         print(f"ref_actions_len: {ref_actions_len}")
         
         if evaluator is not None:
             evaluator.model.eval()
+
+        # entering the action loop
         while not env.episode_over:
             time_ids.append(step_id)
             rgb = observation["rgb"]
@@ -243,20 +251,30 @@ class StreamVLNDAggerCollector:
                 intrinsic_list.append(intrinsic)     
 
                 # get next action with mixed policy
+                # This is the place that the param DAGGER_P is used! 
+                # If DAGGER_P is 0, then the model will always make decisions by model
+                # If DAGGER_P is 1, then the model will always follow the expert's instructions
+                # If DAGGER_P is between 0 and 1, then the model will make decisions with a probability of DAGGER_P
                 if len(action_seq) == 0 and left_expert_actions_num == 0:
                     from_expert = True if force_expert else random.random() < beta
                 
                 if len(action_seq) == 0:
+
+                    # expert action inference!
                     if left_expert_actions_num > 0:
                         action = agent.get_next_action(ref_path[next_waypoint_id])
                         action_seq = [action]
                         left_expert_actions_num -= 1
                     else:
+                        # expert action inference!
                         if from_expert:
                             action = agent.get_next_action(ref_path[next_waypoint_id])
                             action_seq = [action]
+                            # generate future 4 steps
                             left_expert_actions_num = self.args.num_future_steps - 1 # HARDCODED
                         else:
+                            # model action inference!
+                            # This is the typical model inference process
                             if output_ids is None:
                                 sources = copy.deepcopy(evaluator.conversation)
                                 sources[0]["value"] = sources[0]["value"].replace(' Where should you go next to stay on track?', f' Please devise an action sequence to follow the instruction which may include turning left or right by a certain degree, moving forward by a certain distance or stopping once the task is complete.')
@@ -281,6 +299,7 @@ class StreamVLNDAggerCollector:
 
                             add_mem_or_not = False
                             mem_ids.append(step_id)
+                            # This is for the double check
                             if len(mem_ids)>1:
                                 add_mem_or_not = ((mem_ids[-1]//evaluator.num_frames) -(mem_ids[-2] //evaluator.num_frames) >=1)
                             if step_id != 0 and (step_id % evaluator.num_frames == 0 or add_mem_or_not):
@@ -310,11 +329,17 @@ class StreamVLNDAggerCollector:
                             # print(llm_outputs, flush=True)
                             action_seq = evaluator.parse_actions(llm_outputs)
                             # print(action_seq, flush=True)
-
             else:
                 action = agent.get_next_action(ref_path[next_waypoint_id])  
                 action_seq = [action]
                 pass
+            
+            # ==== Finish the action generation process, and here we get the action sequnces.
+            # The debug information
+            # DEBUG
+            # print(f"step {step_id}, from_expert: {from_expert}, force_expert: {force_expert}, left_expert_actions_num: {left_expert_actions_num}", flush=True)
+            # print(f"next waypoint id: {next_waypoint_id}, action_seq: {action_seq}, accumulated_error: {accumulated_error}, agent_get_next_action: {agent.get_next_action(ref_path[next_waypoint_id])}", flush=True)
+            # import ipdb; ipdb.set_trace()
 
             action_source = "expert" if from_expert else "model"
             # print(f"action from {action_source}", flush=True)
@@ -326,27 +351,45 @@ class StreamVLNDAggerCollector:
                 action_seq = [0]
 
             action = action_seq.pop(0)
+
+            # If the inferenced action is not the same as the expert's action, then accumulate the error
             if action != agent.get_next_action(ref_path[next_waypoint_id]):
                 accumulated_error += 1
             
             # when reach a waypoint, free the model to make decision
+            # If we get the right path --> the waypoint, we will let the model to make further decision
+            # If we trigger the expert into the path guidance, then this is the only way to stop expert -- heading to the next waypoint
+            
+            # Also, if we are using the model actions, and go by the waypoint, we will also refresh the next waypoint.
+            # once the expert online, it will garantee you can successfully going to the next waypoint
+
+            # BUT if the model actions can successfully reach the waypoint, should the system clear the accumulated_error?
             while agent.get_next_action(ref_path[next_waypoint_id]) == 0:
                 next_waypoint_id += 1
                 force_expert = False
                 left_expert_actions_num = 0
                 if next_waypoint_id == len(ref_path) - 1:
                     # force_expert = True
+                    # change the goal distance tolerance
                     agent = ShortestPathFollower(sim=env.sim, goal_radius=GOAL_RADIUS, return_one_hot=False)
                 if next_waypoint_id >= len(ref_path):
                     force_episode_end = True
                     action = 0
                     action_source = "expert"
                     break
+            
             # force expert to take action if the model make an error
             metrics = env.get_metrics()
             wp_id_available = next_waypoint_id < len(ref_path)
 
+            # This is a failure detector, we will end the episode if the model get lost 
+            # 1. model stop and there is far away from the goal
+            # 2. relative error --> if the failure over the 90% of the common action steps between waypoints
+            # from here we can also know that the accumulated_error is the error times between the waypoints
+            # 3. abosulute error
             error_not_toleranted = ((from_expert == False and action == 0 and metrics["distance_to_goal"] >= 3.0) or (accumulated_error/max(1,int(ref_actions_len/(len(ref_path)-1))) > 0.8) or accumulated_error > 12)
+            
+            # if we find the error, we will use the expert to correct the error
             if wp_id_available and error_not_toleranted:
                 model_success = False
                 force_expert = True
@@ -355,10 +398,14 @@ class StreamVLNDAggerCollector:
                 action_source = "expert"
             
             # action check
+            # this is the recover for the last expert period
+            # because the condition to jump out of the expert mode is action == 0
+            # so if is not the end of the episode, keep moving
             if action == 0 and not force_episode_end:
                 action = agent.get_next_action(ref_path[next_waypoint_id])
             
-            # update env
+            # update env here we execute the action
+            # action execuation!
             observation = env.step(action)
             metrics = env.get_metrics()
 
@@ -376,22 +423,33 @@ class StreamVLNDAggerCollector:
                     frame = append_text_underneath_image(frame, f"force_expert is {force_expert}")
                     frame = append_text_underneath_image(frame, f"step: {step_id}")
                     frame = append_text_underneath_image(frame, f"next wp id: {next_waypoint_id} / {len(ref_path) - 1}")
-
+                    frame = append_text_underneath_image(frame, f"action : {next_waypoint_id} / {len(ref_path) - 1}")
+                    # add action_seq infomation
+                    frame = append_text_underneath_image(frame, f"action_seq: {action_seq}")
+                    frame = append_text_underneath_image(frame, f"current action: {action}")
+                    frame = append_text_underneath_image(frame, f"accmulated_error: {accumulated_error}")
+                    
                     vis_frames.append(frame)
 
-            if env.episode_over or force_episode_end:            
+            if env.episode_over or force_episode_end:         
                 break
+
             actions.append(action)
             step_id += 1
+
+            # this is for the model inference
             if step_id % evaluator.num_frames == 0:
                 evaluator.model.reset_for_env(self.rank)
                 output_ids = None
                 past_key_values = None
-                time_ids = []            
-        
+                time_ids = []
+
+        # import ipdb; ipdb.set_trace()
+
         # check action length
         assert len(rgb_data_list) == len(actions), f"Length of rgbs and actions mismatch, rgb_data_list: {len(rgb_data_list)}, actions: {(actions)}"
 
+        # This is the exactly the format of the annotations!
         annotation.append({
             "id": episode_id,
             "video": os.path.join("images", f"{scene_id}_{self.dataset}_{episode_id:06d}"),
@@ -400,7 +458,22 @@ class StreamVLNDAggerCollector:
         })
 
         # determine whether to save the episode
-        episode_save = metrics["distance_to_goal"] < MIDGOAL_RADIUS and (((not model_success) and (metrics["pl"] < RELATIVE_PATH_LENGTH_THRESHOLD)) or (metrics["pl"] < SUCCESS_RELATIVE_PATH_LENGTH_THRESHOLD))
+        # 这行代码是一个数据过滤器。它的目的是在一次任务（episode）结束后，根据任务的最终结果和过程指标，
+        # 来判断这条刚刚采集到的轨迹是否有价值、是否应该被保存到最终的DAgger数据集中
+        # A and (B or C)
+        # A: 必须到达目标点附近，这是必要条件
+        # B: model出现失误，有expert参与，走的路程也相对来说比较磕磕绊绊
+        # C: model几乎没有失误，但是走的路程十分磕磕绊绊
+        # 本质上就是保留那些瞎吉儿走, 但是最后能到终点的那些episode
+        # 有点问题，如果走的很烂但这样不是和instruction没有那么align么
+        ## 这个步骤很关键本质上来说
+
+
+        episode_save = metrics["distance_to_goal"] < MIDGOAL_RADIUS and (((not model_success) and (metrics["rpl"] < RELATIVE_PATH_LENGTH_THRESHOLD)) or (metrics["rpl"] < SUCCESS_RELATIVE_PATH_LENGTH_THRESHOLD))
+        
+        # DEBUG print the metrics
+        print(f"distance_to_goal: {metrics['distance_to_goal']}, relative path length: {metrics['rpl']}")
+
         if episode_save:
             # assert len(rgb_data_list) == len(depth_data_list), f"Length of rgbs and depths mismatch, rgb_data_list: {len(rgb_data_list)}, depth_data_list: {len(depth_data_list)}"
             # assert len(init_rgb_data_list) == len(init_depth_data_list), f"Length of rgbs and depths mismatch, init_rgb_data_list: {len(init_rgb_data_list)}, init_depth_data_list: {len(init_depth_data_list)}"
@@ -441,6 +514,7 @@ class StreamVLNDAggerCollector:
     def update_dataset(self, evaluator, dataset=None):
         '''Update dataset with the collected data.'''
         
+        # 在分布式环境下，为每个进程设置不同种子，可以避免所有进程都去采集完全相同的任务序列
         seed = self.rank
         random.seed(seed)
         np.random.seed(seed)
@@ -463,7 +537,12 @@ class StreamVLNDAggerCollector:
             if episode.scene_id not in scene_episode_dict:
                 scene_episode_dict[episode.scene_id] = []
             scene_episode_dict[episode.scene_id].append(episode)
-        sampled_episodes_uuids = episode_uuids
+        
+        # 在这里可以实现对任务序列的整体采样
+        # 比如说：sampled_episodes_uuids = random.sample(episode_uuids, 100) 
+        # DEBUG的地方！要是使用DEBUG的话，这边就采用比较少的episode就行了
+        sampled_episodes_uuids = random.sample(episode_uuids, 2) 
+        # sampled_episodes_uuids = episode_uuids
         sampled_episodes_by_scene = {}
         for scene_id in sorted(scene_episode_dict.keys()):
             sampled_episodes_traj_ids = [(episode_uuid[1], episode_uuid[2]) for episode_uuid in sampled_episodes_uuids if episode_uuid[0] == scene_id]
@@ -473,13 +552,19 @@ class StreamVLNDAggerCollector:
         num_collect_episodes = 0
         start_id = 0
         annotations = []
+
+        # import ipdb; ipdb.set_trace()
+
         with tqdm.tqdm(total=min(self.dagger_config.update_size, len(sampled_episodes_uuids)) // self.world_size, dynamic_ncols=True) as pbar, \
-            torch.no_grad():         
+            torch.no_grad():
+            # 遍历每个场景，获取采样后的任务序列
             for scene_id in sorted(scene_episode_dict.keys()):
                 episodes = sampled_episodes_by_scene[scene_id]
                 if len(episodes) == 0:
                     continue
                 print(f"scene_id: {scene_id}, len of episodes: {len(episodes)}")
+                # 每一个GPU拿到属于自己的任务序列
+                # traverse the episodes that each GPU should collect
                 for episode in episodes[self.rank::self.world_size]:  
                     assert scene_id == episode.scene_id, f"scene mismatch: {scene_id} vs {episode.scene_id}"          
                     scan = episode.scene_id.split('/')[-2]
@@ -501,7 +586,7 @@ class StreamVLNDAggerCollector:
                                   "save": episode_dagger["metrics"]["save"],
                                   "model_success": episode_dagger["metrics"]["model_success"], 
                                   "success": episode_dagger["metrics"]["success"], 
-                                  "relative_pl": episode_dagger["metrics"]["pl"],
+                                  "relative_pl": episode_dagger["metrics"]["rpl"],
                                   "step_id": episode_dagger["metrics"]["step_id"],
                                   "ref_actions": episode_dagger["metrics"]["ref_actions_len"],
                                   "accumulated_error": episode_dagger["metrics"]["accumulated_error"],
@@ -665,8 +750,8 @@ if __name__ == "__main__":
     world_size = get_world_size()
 
     model.reset(world_size)
-    node_id = os.environ['SLURM_NODEID']
-    node_list = os.environ['SLURM_NODELIST']
+    # node_id = os.environ['SLURM_NODEID']
+    # node_list = os.environ['SLURM_NODELIST']
 
 
     evaluator = VLNEvaluator(

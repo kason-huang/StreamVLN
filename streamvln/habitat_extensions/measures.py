@@ -201,6 +201,71 @@ class PL(Measure):
         )
 
 @registry.register_measure
+class RPL(Measure):
+    r"""SPL (Success weighted by Path Length)
+
+    ref: On Evaluation of Embodied Agents - Anderson et. al
+    https://arxiv.org/pdf/1807.06757.pdf
+    The measure depends on Distance to Goal measure and Success measure
+    to improve computational
+    performance for sophisticated goal areas.
+    """
+
+    def __init__(
+        self, sim: Simulator, config: "DictConfig", *args: Any, **kwargs: Any
+    ):
+        self._previous_position: Union[None, np.ndarray, List[float]] = None
+        self._start_end_episode_distance: Optional[float] = None
+        self._agent_episode_distance: Optional[float] = None
+        self._episode_view_points: Optional[
+            List[Tuple[float, float, float]]
+        ] = None
+        self._sim = sim
+        self._config = config
+
+        super().__init__()
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return "rpl"
+
+    def reset_metric(self, episode, task, *args: Any, **kwargs: Any):
+        task.measurements.check_measure_dependencies(
+            self.uuid, [DistanceToGoal.cls_uuid, Success.cls_uuid]
+        )
+
+        self._previous_position = self._sim.get_agent_state().position
+        self._agent_episode_distance = 0.0
+        self._start_end_episode_distance = task.measurements.measures[
+            DistanceToGoal.cls_uuid
+        ].get_metric()
+        self.update_metric(  # type:ignore
+            episode=episode, task=task, *args, **kwargs
+        )
+
+    def _euclidean_distance(self, position_a, position_b):
+        return np.linalg.norm(position_b - position_a, ord=2)
+
+    def update_metric(
+        self, episode, task: EmbodiedTask, *args: Any, **kwargs: Any
+    ):
+        # ep_success = task.measurements.measures[Success.cls_uuid].get_metric()
+
+        current_position = self._sim.get_agent_state().position
+        self._agent_episode_distance += self._euclidean_distance(
+            current_position, self._previous_position
+        )
+
+        self._previous_position = current_position
+
+        self._metric = (
+            self._start_end_episode_distance
+            / max(
+                self._start_end_episode_distance, self._agent_episode_distance
+            )
+        )
+
+
+@registry.register_measure
 class StepsTaken(Measure):
     """Counts the number of times update_metric() is called. This is equal to
     the number of times that the agent takes an action. STOP counts as an

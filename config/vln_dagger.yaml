@@ -50,11 +50,11 @@ habitat:
         # success_distance: 3.0
       oracle_navigation_error:
         type: OracleNavigationError
-      pl:
-        type: PL
+      rpl:
+        type: RPL
         
   dataset:
     type: R2RVLN-v1
     split: train
-    scenes_dir: data/scene_datasets/
+    scenes_dir: /shared_space/jiangjiajun/data/scene_datasets
     data_path: data/datasets/r2r/{split}/{split}.json.gz
