@@ -5,7 +5,7 @@ import math
 # Define which metrics to compute for each dataset
 data_metrics = {
     'r2r': ['success', 'spl', 'ne', 'os'],
-    'rxr': ['success', 'spl', 'os']
+    'rxr': ['success', 'spl', 'os', 'ndtw']
 }
 
 def safe_mean(values):

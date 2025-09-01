@@ -4,8 +4,8 @@ import gzip
 # RXR_EPISODES_PATH = "/shared_space/jiangjiajun/data/streamvln_datasets/datasets/rxr/train/train_follower.json.gz"
 # NEW_RXR_EPISODES_PATH = "/shared_space/jiangjiajun/data/streamvln_datasets/datasets/rxr/train/train_follower_en.json.gz"
 
-RXR_EPISODES_PATH = "/shared_space/jiangjiajun/data/datasets/RxR_VLNCE_v0/val_unseen/val_unseen_guide.json.gz"
-NEW_RXR_EPISODES_PATH = "/shared_space/jiangjiajun/data/datasets/RxR_VLNCE_v0/val_unseen/val_unseen_guide_en.json.gz"
+RXR_EPISODES_PATH = "/shared_space/jiangjiajun/data/streamvln_datasets/datasets/rxr/val_unseen/val_unseen_guide_gt.json.gz"
+NEW_RXR_EPISODES_PATH = "/shared_space/jiangjiajun/data/streamvln_datasets/datasets/rxr/val_unseen/val_unseen_guide_gt_en.json.gz"
 
 
 episodes_modified = {}

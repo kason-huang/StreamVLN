@@ -9,4 +9,4 @@
 #SBATCH --output=log/streamvln-train-4n-%j.out
 #SBATCH --error=log/streamvln-train-4n-%j.err
 
-srun bash scripts/streamvln_train.sh
+srun bash scripts/streamvln_stage_one_train.sh
