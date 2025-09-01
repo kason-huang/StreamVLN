@@ -542,8 +542,8 @@ class StreamVLNDAggerCollector:
         # 在这里可以实现对任务序列的整体采样
         # 比如说：sampled_episodes_uuids = random.sample(episode_uuids, 100) 
         # DEBUG的地方！要是使用DEBUG的话，这边就采用比较少的episode就行了
-        sampled_episodes_uuids = random.sample(episode_uuids, 2) 
-        # sampled_episodes_uuids = episode_uuids
+        # sampled_episodes_uuids = random.sample(episode_uuids, 2) 
+        sampled_episodes_uuids = episode_uuids
         sampled_episodes_by_scene = {}
         for scene_id in sorted(scene_episode_dict.keys()):
             sampled_episodes_traj_ids = [(episode_uuid[1], episode_uuid[2]) for episode_uuid in sampled_episodes_uuids if episode_uuid[0] == scene_id]
@@ -596,6 +596,7 @@ class StreamVLNDAggerCollector:
                         f.write(json.dumps(result) + "\n")
                     
                     if not episode_dagger["metrics"]["save"]:
+                        pbar.update()
                         continue 
 
                     for k,v in episode_dagger.items():

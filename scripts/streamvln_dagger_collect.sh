@@ -8,13 +8,13 @@ MASTER_PORT=$((RANDOM % 101 + 20000))
 # source /home/jiangjiajun/miniconda3/etc/profile.d/conda.sh
 # conda activate streamvln
 
-DAGGER_DATASET=R2R
-DAGGER_DATA_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/datasets/r2r/train/train.json.gz
-DAGGER_GT_ANNOTATIONS_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/R2R/annotations.json
+# DAGGER_DATASET=R2R
+# DAGGER_DATA_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/datasets/r2r/train/train.json.gz
+# DAGGER_GT_ANNOTATIONS_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/R2R/annotations.json
 
-# DAGGER_DATASET=RxR
-# DAGGER_DATA_PATH=data/datasets/rxr/train/train_guide_en.json.gz
-# DAGGER_GT_ANNOTATIONS_PATH=data/trajectory_data/RxR_new/annotations.json
+DAGGER_DATASET=RxR
+DAGGER_DATA_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/datasets/rxr/train/train_guide_en.json.gz
+DAGGER_GT_ANNOTATIONS_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/trajectory_data/RxR_new/annotations.json
 
 # DAGGER_DATASET=EnvDrop
 # DAGGER_DATA_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/datasets/envdrop/envdrop/envdrop.json.gz
@@ -30,7 +30,7 @@ DAGGER_DATA_IT=3 # not used if DAGGER_P=0
 CHECKPOINT="checkpoints/StreamVLN_Video_qwen_1_5_1epoch_196token_8history_32frame_128batchsize_refined"
 echo "CHECKPOINT: ${CHECKPOINT}"
 
-DAGGER_OUTPUT_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/dagger_data/r2r_debug
+DAGGER_OUTPUT_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/dagger_data/RxR
 
 mkdir -p ${DAGGER_OUTPUT_PATH}
 
@@ -44,4 +44,4 @@ torchrun --nproc_per_node=1 --master_port=$MASTER_PORT streamvln/streamvln_dagge
     --dagger_data_it ${DAGGER_DATA_IT} \
     --dagger_output_path ${DAGGER_OUTPUT_PATH} \
     --dagger_gt_annotations_path ${DAGGER_GT_ANNOTATIONS_PATH} \
-    --dagger_save_video
+    # --dagger_save_video
