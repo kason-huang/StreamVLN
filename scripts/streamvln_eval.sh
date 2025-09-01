@@ -30,5 +30,5 @@ torchrun \
     --master_port=$MASTER_PORT \
     streamvln/streamvln_eval_debug.py \
     --model_path $CHECKPOINT \
-    --habitat_config_path config/vln_r2r_v1_3.yaml \
-    --output_path './results/val_unseen/StreamVLN_Video_qwen_1_5_1epoch_196token_8history_32frame_128batchsize_refined-eval-r2r_v1_3' \
+    --habitat_config_path config/vln_rxr.yaml \
+    --output_path './results/val_unseen/StreamVLN_Video_qwen_1_5_1epoch_196token_8history_32frame_128batchsize_refined-rxr' \

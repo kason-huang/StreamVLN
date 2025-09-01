@@ -55,5 +55,4 @@ habitat:
     type: R2RVLN-v1
     split: val_unseen
     scenes_dir: /shared_space/jiangjiajun/data/scene_datasets
-    data_path: /shared_space/jiangjiajun/data/datasets/R2R_VLNCE_v1-3_preprocessed/{split}/{split}.json.gz
-    # data_path: /shared_space/jiangjiajun/data/datasets/envdrop/{split}/{split}.json.gz
+    data_path: /shared_space/jiangjiajun/data/datasets/RxR_VLNCE_v0/{split}/{split}_guide_en.json.gz

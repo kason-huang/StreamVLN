@@ -204,8 +204,9 @@ class StreamVLNDAggerCollector:
         accumulated_error = 0 
 
         # Here the gt annotations are the data collected by the streamvln, saved in trajectory_data folder, id refers to the episode id
+        # The so called gt annotations are just to provide the actual number of the actions
         ref_actions_len = next((len(annot["actions"]) for annot in self.gt_annotations if int(episode_id) == annot["id"]), DEFAULT_EPISODE_LENGTH)
-        print(f"ref_actions_len: {ref_actions_len}")
+        print(f"reference_actions_len: {ref_actions_len}")
         
         if evaluator is not None:
             evaluator.model.eval()
