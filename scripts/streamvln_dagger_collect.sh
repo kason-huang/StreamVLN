@@ -5,6 +5,8 @@ set -x
 export MAGNUM_LOG=quiet HABITAT_SIM_LOG=quiet
 MASTER_PORT=$((RANDOM % 101 + 20000))
 
+GPUS_PER_NODE=8
+
 # source /home/jiangjiajun/miniconda3/etc/profile.d/conda.sh
 # conda activate streamvln
 
@@ -30,11 +32,11 @@ DAGGER_DATA_IT=3 # not used if DAGGER_P=0
 CHECKPOINT="checkpoints/StreamVLN_Video_qwen_1_5_1epoch_196token_8history_32frame_128batchsize_refined"
 echo "CHECKPOINT: ${CHECKPOINT}"
 
-DAGGER_OUTPUT_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/dagger_data/RxR
+DAGGER_OUTPUT_PATH=/shared_space/jiangjiajun/data/streamvln_datasets/dagger_data/RxR_new
 
 mkdir -p ${DAGGER_OUTPUT_PATH}
 
-torchrun --nproc_per_node=1 --master_port=$MASTER_PORT streamvln/streamvln_dagger.py \
+torchrun --nproc_per_node=${GPUS_PER_NODE} --master_port=$MASTER_PORT streamvln/streamvln_dagger.py \
     --model_path $CHECKPOINT \
     --dagger_dataset ${DAGGER_DATASET} \
     --dagger_data_path ${DAGGER_DATA_PATH} \

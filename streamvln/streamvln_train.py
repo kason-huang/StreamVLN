@@ -1445,13 +1445,16 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,visi
         QA_data_agrs.video_folder = data_args.qa_video_folder
         QA_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=QA_data_agrs.data_path, datasets="QA_datasets", data_args=QA_data_agrs, task_id=1)
         
-        SCANQA_data_agrs = copy.deepcopy(data_args)
-        SCANQA_data_agrs.video_folder = data_args.scanqa_video_folder
-        SCANQA_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=SCANQA_data_agrs.data_path, datasets="SCANQA_datasets", data_args=SCANQA_data_agrs, task_id=2)
+        # SCANQA_data_agrs = copy.deepcopy(data_args)
+        # SCANQA_data_agrs.video_folder = data_args.scanqa_video_folder
+        # SCANQA_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=SCANQA_data_agrs.data_path, datasets="SCANQA_datasets", data_args=SCANQA_data_agrs, task_id=2)
         
-        MMC4_dataset = LazyMMC4Dataset(tokenizer=tokenizer, data_path=data_args.data_path, datasets="MMC4_datasets", data_args=data_args, task_id=3)
+        # MMC4_dataset = LazyMMC4Dataset(tokenizer=tokenizer, data_path=data_args.data_path, datasets="MMC4_datasets", data_args=data_args, task_id=3)
         
-        dataset = dataset + [QA_dataset] + [SCANQA_dataset] + [MMC4_dataset]
+        # dataset = dataset + [QA_dataset] + [SCANQA_dataset] + [MMC4_dataset]
+        dataset = dataset + [QA_dataset]
+
+
     if len(dataset) > 1:
         train_dataset = CombineDataset(dataset)
     else:

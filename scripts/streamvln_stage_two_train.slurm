@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=streamvln-train-stage-two
-#SBATCH --nodes=4
+#SBATCH --nodes=2
 #SBATCH --gres=gpu:8
 #SBATCH --time=96:00:00
 #SBATCH --cpus-per-task=128

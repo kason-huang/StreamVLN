@@ -4,7 +4,7 @@ import math
 
 # Define which metrics to compute for each dataset
 data_metrics = {
-    'r2r': ['success', 'spl', 'ne', 'os'],
+    'r2r': ['success', 'spl', 'ne', 'os', 'steps', 't_input_preprocess', 't_model_encode_sum', 't_model_input_preprocess', 't_model_long_sum', 't_model_short_sum', 't_env_step_sum'],
     'rxr': ['success', 'spl', 'os', 'ndtw']
 }
 
