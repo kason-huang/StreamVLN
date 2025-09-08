@@ -608,7 +608,7 @@ class VLNEvaluator:
                     "spl": metrics["spl"],
                     "os": metrics['oracle_success'],
                     "ne": metrics["distance_to_goal"],
-                    "ndtw": metrics["ndtw"],
+                    # "ndtw": metrics["ndtw"],
                     "steps": step_id,
                     "t_total": episode_all_time,
                     "t_input_preprocess": time_summary["input_preprocess"]["sum"],

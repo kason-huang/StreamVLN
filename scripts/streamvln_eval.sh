@@ -19,10 +19,10 @@ echo "SLURM_JOB_ID=$SLURM_JOB_ID"
 echo "HOST_NODE_ADDR: $MASTER_ADDR"
 echo "GPUS_PER_NODE: $GPUS_PER_NODE"
 echo "SLURM_NNODES: $SLURM_NNODES"
-echo "SLURM_PROCID: $SLURM_PROCID"
+echo "SLURM_PROCID: $SLURM_PROCID" 
 echo "-----------------------------"
 
-CHECKPOINT="checkpoints/StreamVLN_Video_qwen_1_5_1epoch_196token_4history_32frame_128batchsize_refined"
+CHECKPOINT="checkpoints/history/StreamVLN_Video_qwen_1_5_1epoch_196token_1history_32frame_64batchsize"
 echo "CHECKPOINT: ${CHECKPOINT}"
 
 torchrun \
@@ -31,4 +31,7 @@ torchrun \
     streamvln/streamvln_eval_debug.py \
     --model_path $CHECKPOINT \
     --habitat_config_path config/vln_r2r_v1_3.yaml \
-    --output_path './results/history/r2r/StreamVLN_Video_qwen_1_5_1epoch_196token_4history_32frame_128batchsize_refined' \
+    --output_path './results/r2r/history/StreamVLN_Video_qwen_1_5_1epoch_196token_1history_32frame_64batchsize' \
+    --num_future_steps 4 \
+    --num_history 1 \
+    --num_frames 32 \
