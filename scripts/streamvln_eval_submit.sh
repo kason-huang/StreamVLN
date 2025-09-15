@@ -39,22 +39,27 @@ echo "-----------------------------"
 
 # 5. 定义评估任务的变量
 # These parameters should match the training parameters of the model you are evaluating.
+
+# Task name
+TASK_NAME="history_stride"
+
 PROMPT_VERSION="qwen_1_5"
 NUM_EPOCHS=1
 
-NUM_HISTORY=12
+NUM_HISTORY=8
 NUM_FRAMES=32
 EFFECTIVE_BATCH_SIZE=64
 
 NUM_FUTURE_STEPS=4
 
-# Task name
-TASK_NAME="history"
+# Visual token compression
+HISTORY_STRIDE=16
+CURRENT_STRIDE=2
 
 # =================================================================================================
 
 # --- 使用变量构建运行名称和路径 (Build run name and paths using variables) ---
-EVAL_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_${NUM_EPOCHS}epoch_196token_${NUM_HISTORY}history_${NUM_FRAMES}frame_${EFFECTIVE_BATCH_SIZE}batchsize"
+EVAL_RUN_NAME="StreamVLN_Video_${PROMPT_VERSION}_${NUM_EPOCHS}epoch_196token_${NUM_HISTORY}history_${NUM_FRAMES}frame_${EFFECTIVE_BATCH_SIZE}batchsize_${NUM_FUTURE_STEPS}future_${HISTORY_STRIDE}historystride"
 
 CHECKPOINT="checkpoints/${TASK_NAME}/${EVAL_RUN_NAME}"
 OUTPUT_PATH="results/r2r/${TASK_NAME}/${EVAL_RUN_NAME}"
@@ -76,7 +81,9 @@ torchrun \
     --output_path ${OUTPUT_PATH} \
     --num_future_steps ${NUM_FUTURE_STEPS} \
     --num_history ${NUM_HISTORY} \
-    --num_frames ${NUM_FRAMES}
+    --num_frames ${NUM_FRAMES} \
+    --random_history False \
+    --history_stride ${HISTORY_STRIDE}
 
 echo "========================================================"
 echo "Evaluation job finished."

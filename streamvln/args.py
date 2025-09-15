@@ -94,6 +94,14 @@ class DataArguments:
     image_size: Optional[int] = field(default=384)
     remove_init_turns: Optional[bool] = field(default=False)
 
+    debug_open: bool = field(default=False, metadata={"help": "Enter debug mode, only for local single GPU training."})
+    use_random: bool = field(default=False, metadata={"help": "Whether to use random sampling for future steps."})  
+
+    # visual token compression
+    current_stride: int = field(default=2)
+    history_stride: int = field(default=2)
+
+
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
@@ -126,4 +134,5 @@ class TrainingArguments(transformers.TrainingArguments):
     gradient_checkpointing: bool = field(default=True)
     verbose_logging: bool = field(default=False)
     attn_implementation: str = field(default="flash_attention_2", metadata={"help": "Use transformers attention implementation."})
+    
     

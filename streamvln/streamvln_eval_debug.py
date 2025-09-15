@@ -146,6 +146,7 @@ class VLNEvaluator:
         self.num_frames = args.num_frames
         self.num_future_steps = args.num_future_steps
         self.num_history = args.num_history
+        self.random_history = args.random_history
         
 
     def preprocess_depth_image(self, depth_image, do_depth_scale=True, depth_scale=1000):
@@ -465,14 +466,43 @@ class VLNEvaluator:
                             # 如果是第一次，那么step_id == 0 下面的判断不会进入
                             # num_frames是32
                             if step_id != 0 and step_id % self.num_frames == 0:
-                                if self.num_history is None:
-                                    history_ids = slice(0, time_ids[0], self.num_future_steps)
+                                history_images, history_depths, history_poses, history_intrinsics = [], [], [], []
+
+                                # 情况一：随机采样历史帧
+                                if self.random_history:
+                                    # 确保有历史帧可供采样
+                                    if self.num_history is not None and time_ids[0] > 0:
+                                        # 确定采样数量，不能超过总历史帧数
+                                        num_samples = min(self.num_history, time_ids[0])
+                                        history_indices = sorted(random.sample(range(time_ids[0]), num_samples))
+                                        
+                                        # 正确做法：使用列表推导式 (list comprehension) 根据索引列表来提取元素
+                                        history_images = [rgb_list[i] for i in history_indices]
+                                        history_depths = [depth_list[i] for i in history_indices]
+                                        history_poses = [pose_list[i] for i in history_indices]
+                                        history_intrinsics = [intrinsic_list[i] for i in history_indices]
+
+                                # 情况二：使用切片 (slice) 系统性地采样历史帧
                                 else:
-                                    history_ids = slice(0, time_ids[0], (time_ids[0] // self.num_history))
-                                images = rgb_list[history_ids] + images
-                                depths = depth_list[history_ids] + depths
-                                poses = pose_list[history_ids] + poses
-                                intrinsics = intrinsic_list[history_ids] + intrinsics
+                                    step = 0
+                                    if self.num_history is None:
+                                        step = self.num_future_steps
+                                    elif self.num_history > 0:
+                                        step = time_ids[0] // self.num_history
+                                    
+                                    # 只有当步长大于0时，切片才有意义，避免 ValueError
+                                    if step > 0:
+                                        history_slice = slice(0, time_ids[0], step)
+                                        history_images = rgb_list[history_slice]
+                                        history_depths = depth_list[history_slice]
+                                        history_poses = pose_list[history_slice]
+                                        history_intrinsics = intrinsic_list[history_slice]
+
+                                # 将采样到的历史数据拼接到当前数据前面
+                                images = history_images + images
+                                depths = history_depths + depths
+                                poses = history_poses + poses
+                                intrinsics = history_intrinsics + intrinsics
                             
                             # 输入mock成为dict
                             input_dict = {'images':torch.stack(images).unsqueeze(0), 'depths':torch.stack(depths).unsqueeze(0), \
@@ -808,7 +838,13 @@ def eval():
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
-    
+    parser.add_argument('--random_history', type=bool, default=False,
+                        help='random history selection')
+    parser.add_argument('--history_stride', type=int, default=2,
+                        help='the stride for history image pooling')
+    parser.add_argument('--current_stride', type=int, default=2,
+                        help='the stride for current image pooling')
+
     args = parser.parse_args()
     init_distributed_mode(args)
     local_rank = args.local_rank
@@ -834,6 +870,8 @@ def eval():
     
     # Custom settings for the model, which is the number of frames, future steps and history
     model.model.num_history = args.num_history
+    model.model.history_stride = args.history_stride
+    model.model.current_stride = args.current_stride
 
     # because we are in eval mode, we don't need to set the gradient to True
     model.requires_grad_(False)

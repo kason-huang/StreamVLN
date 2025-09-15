@@ -31,6 +31,8 @@ from packaging import version
 import numpy as np
 from functools import partial
 
+import debugpy # <-- 2. 引入 debugpy
+
 import time
 import random
 import yaml
@@ -1521,7 +1523,12 @@ def get_model(model_args, training_args, data_args, bnb_model_from_pretrained_ar
         overwrite_config["num_future_steps"] = data_args.num_future_steps
     if data_args.num_history:
         overwrite_config["num_history"] = data_args.num_history
-        
+    
+    if data_args.current_stride:
+        overwrite_config["current_stride"] = data_args.current_stride
+    if data_args.history_stride:
+        overwrite_config["history_stride"] = data_args.history_stride
+
     if model_args.mm_tunable_parts:
         overwrite_config["mm_tunable_parts"] = model_args.mm_tunable_parts
     
@@ -1552,8 +1559,30 @@ def get_model(model_args, training_args, data_args, bnb_model_from_pretrained_ar
 def train(attn_implementation=None):
     global local_rank
     
+    # transformers.HfArgumentParser 是 Hugging Face 提供的一个增强版的命令行参数解析器。
+    # ModelArguments, DataArguments, TrainingArguments 这些都是自己定义的
+    # parse_args_into_dataclasses
+    # 读取你通过 bash 脚本启动程序时，在后面跟上的一长串 -- 参数
+    # 根据第一步加载的三个“蓝图”，将命令行里的每个参数值赋给对应类里的相应字段
+    # 最后，它会创建这三个 dataclass 的实例（对象）
+    # 添加新的参数的时候也只需要args文件中进行添加就行了
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    # ====================== 从这里开始添加/替换代码 ======================
+    if training_args.local_rank != -1 and data_args.debug_open:
+        port = 5678 + training_args.local_rank
+        
+        rank0_print(f"--- Multi-GPU Debugging Mode Enabled ---")
+        rank0_print(f"Rank 0 is waiting on port 5678")
+        rank0_print(f"... and so on for all other ranks.")
+        rank0_print(f"Attach VSCode debugger now, then set breakpoints.")
+        
+        # 3. 启动 debugpy 监听服务
+        debugpy.listen(('0.0.0.0', port))
+        
+        debugpy.wait_for_client()
+    # ====================== 代码添加结束 ======================
 
     if training_args.verbose_logging:
         rank0_print(f"Inspecting experiment hyperparameters:\n")
@@ -1561,30 +1590,31 @@ def train(attn_implementation=None):
         rank0_print(f"data_args = {vars(data_args)}\n\n")
         rank0_print(f"training_args = {vars(training_args)}\n\n")
 
+    
+
     local_rank = training_args.local_rank
+
     compute_dtype = torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32)
     
     bnb_model_from_pretrained_args = {}
     if training_args.bits in [4, 8]:
         from transformers import BitsAndBytesConfig
 
-        bnb_model_from_pretrained_args.update(
-            dict(
-                device_map={"": training_args.device},
+        bnb_model_from_pretrained_args["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=training_args.bits == 4,
                 load_in_8bit=training_args.bits == 8,
-                quantization_config=BitsAndBytesConfig(
-                    load_in_4bit=training_args.bits == 4,
-                    load_in_8bit=training_args.bits == 8,
-                    llm_int8_threshold=6.0,
-                    llm_int8_has_fp16_weight=False,
-                    bnb_4bit_compute_dtype=compute_dtype,
-                    bnb_4bit_use_double_quant=training_args.double_quant,
-                    bnb_4bit_quant_type=training_args.quant_type,  # {'fp4', 'nf4'}
-                ),
+                llm_int8_threshold=6.0,
+                llm_int8_has_fp16_weight=False,
+                bnb_4bit_compute_dtype=compute_dtype,
+                bnb_4bit_use_double_quant=training_args.double_quant,
+                bnb_4bit_quant_type=training_args.quant_type,  # {'fp4', 'nf4'}
             )
-        )
+        
+        # device_map 通常在与量化一起使用时是必需的，所以保留
+        bnb_model_from_pretrained_args["device_map"] = {"": training_args.device}
+        
     # import ipdb; ipdb.set_trace()
+    # 获取得到一个 StreamVLNForCausalLM 的模型对象
     model = get_model(model_args, training_args, data_args, bnb_model_from_pretrained_args)
     model.config.use_cache = False
     if model_args.rope_scaling_factor is not None and model_args.rope_scaling_type is not None:
@@ -1683,6 +1713,7 @@ def train(attn_implementation=None):
         data_args.is_multimodal = True
 
         model.config.image_aspect_ratio = data_args.image_aspect_ratio
+        # 在后续处理真实图片时，模型会参考这个列表，把输入的任意宽高比的图片，缩放到和列表中某个尺寸最接近的大小，然后再进行切块处理。这确保了图像处理的高质量和高保真度。
         if data_args.image_grid_pinpoints is not None:
             if isinstance(data_args.image_grid_pinpoints, str) and "x" in data_args.image_grid_pinpoints:
                 try:
@@ -1816,7 +1847,7 @@ def train(attn_implementation=None):
         data_args.transform_train = None
 
     # import ipdb; ipdb.set_trace()
-    data_module = make_supervised_data_module(tokenizer=tokenizer,vision_tower=vision_tower, data_args=data_args)
+    data_module = make_supervised_data_module(tokenizer=tokenizer,vision_tower=vision_tower, data_args=data_args) # data_module 是一个字典，包含训练集、验证集和数据整理器
     
     params_no_grad = [
         n for n, p in model.named_parameters() if not p.requires_grad

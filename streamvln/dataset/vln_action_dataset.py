@@ -261,7 +261,7 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
         if roles[source[0]["from"]] != roles["human"]:
             source = source[1:]
 
-        input_id, target = [], []
+        input_id, target = [], [] # 在训练的时候，模型会看到完整的对话内容，然后只预测assistant的回答，然后只会评价assistant的回答，这就是target的作用；input_ids: 包含完整对话（系统、用户、助手的所有发言）的 token ID。；target: 是对应的标签。
 
         # New version, use apply chat template
         # Build system message for each sentence
@@ -626,14 +626,18 @@ class VLNActionDataset(Dataset):
 
         self.video_folder = data_args.video_folder.split(',')
 
-        self.nav_data =[]
+        self.use_random = data_args.use_random
+
+        self.nav_data =[] # 此处整合所有的video data
         for vf in self.video_folder:
             anno_json = json.load(open(os.path.join(vf, 'annotations.json'), 'r'))
             for tdata in anno_json:
                 tdata['video'] = os.path.join(vf, tdata['video'])
             self.nav_data += anno_json
         
-        self.data_list = []
+        self.data_list = [] # 进一步处理nav数据
+        # 根据num_frames划分数据,构建索引卡，生成训练数据，也就是说现在就是相当于一个训练样本就是32帧视频+对应的动作序列
+        # 一段原有的导航数据经过切分之后会分成多个训练样本，数量取决于原有导航数据的长度和num_frames的值，也就是下面写的num_rounds
         for ep_id, item in enumerate(self.nav_data):
             instructions = item['instructions']
             actions = item['actions']
@@ -731,29 +735,83 @@ class VLNActionDataset(Dataset):
         return sources
     
     def __getitem__(self, i):
+        # 获取sample的索引
         ep_id, ins_id, start_idx, valid_idx = self.data_list[i]
+        # 获取实际的数据 data
         data = self.nav_data[ep_id]
+        # 获取视频或者说图像路径
         video_path = data['video']
         video_frames = sorted(os.listdir(os.path.join(video_path, 'rgb')))
 
         instructions = data.get("instructions", None)
+
         if not isinstance(instructions, list):
             instructions = [instructions]
 
+        # 预测的是下一个动作！
+        # 在实际的数据构建过程中，action和image是一一对应的，但是这个对应本质上是现有action然后再render出来image这么来去做的
+        # 但是在训练过程中，我们是希望模型根据当前的image来预测下一个动作
+        # 因此在这里我们需要把actions向后移动一位，加上这个1.同时加上0表示结束
+        # 这句代码本质上就是在重塑action数据，让当前image对应的action是下一个动作
         actions = data['actions'][1+valid_idx:] + [0]
         actions_len = len(actions)
-        time_ids = np.arange(start_idx, min(start_idx + self.num_frames, actions_len))
+
+        # 取出这个片段的时间戳
+        time_ids = np.arange(start_idx, min(start_idx + self.num_frames, actions_len)) 
         assert len(time_ids) > 0
-        actions = np.array(actions)[time_ids]
+        # 根据这个片段取出 这个片段对应的actions 也就是num_frames个actions
+        actions = np.array(actions)[time_ids] 
 
+        # 接下来就是找到对应的图像
+        # 因此这边需要的是绝对的坐标，然后从之前的images中去取
         start_idx, end_idx, interval = time_ids[0]+valid_idx, time_ids[-1]+1+valid_idx, self.num_future_steps
+        
+        # 根据要估计的未来的N steps来找到每一帧图像的id，所以future steps越大，images就会越少
+        # 如果future steps越小，意味着images就会越多，一次训练数据的图像也就会越多，对内存的占用也就会越大
         sample_step_ids = np.arange(start_idx, end_idx, interval, dtype=np.int32)
-        sample_frames = [os.path.join(video_path, 'rgb', video_frames[i]) for i in sample_step_ids]
+        # 获取具体的对应的图像路径
+        sample_frames = [os.path.join(video_path, 'rgb', video_frames[i]) for i in sample_step_ids] 
 
+        # 这里就是对应的添加history的地方，如果说这个time id不是初始帧的话，就还会从前面的帧数去抽取一些作为历史
         if time_ids[0] != 0:
-            history_step_ids = np.arange(0+valid_idx, time_ids[0]+valid_idx, max(time_ids[0] // self.num_history, 1))
+            # --- 根据 self.use_random 标志选择采样策略 ---
+            if self.use_random:
+                # ############## 策略一：随机采样 ##############
+                
+                # 1. 定义所有可供选择的历史帧的索引范围
+                available_history_indices = np.arange(0 + valid_idx, time_ids[0] + valid_idx)
+                
+                # 2. 确定要采样的帧数 (不能超过实际存在的历史帧数)
+                num_to_sample = min(self.num_history, len(available_history_indices))
+                
+                # 3. 从可用索引中进行随机、不重复的抽样
+                history_step_ids = np.random.choice(
+                    available_history_indices, 
+                    size=num_to_sample, 
+                    replace=False
+                )
+                
+                # 4. 对抽取的索引进行排序，以保持时间顺序
+                history_step_ids = np.sort(history_step_ids)
+
+            else:
+                # ############## 策略二：均匀采样 ##############
+                
+                # 计算采样步长
+                step = max(time_ids[0] // self.num_history, 1)
+                
+                # 使用 arange 进行等间隔采样
+                history_step_ids = np.arange(
+                    0 + valid_idx, 
+                    time_ids[0] + valid_idx, 
+                    step
+                )
+
+            # --- 后续处理（两种策略通用） ---
+            # 根据最终得到的索引，获取对应的帧路径
             history_frames = [os.path.join(video_path, 'rgb', video_frames[i]) for i in history_step_ids]
         else:
+            # 如果没有历史 (是轨迹的第一个片段)，则历史帧为空
             history_frames = []
             
         images = []
@@ -762,7 +820,21 @@ class VLNActionDataset(Dataset):
             if self.transforms is not None:
                 image = self.transforms(image)
             
+            # 预处理图像以适应模型输入要求 3 384 384,是通过直接压缩的形式进行
             image = self.image_processor.preprocess(images=image, return_tensors='pt')['pixel_values'][0] # [3, H, W]
+
+            # from torchvision.transforms import ToPILImage
+            # to_pil = ToPILImage()
+            # debug_image_tensor = image.clone().cpu() # 克隆一份以防修改原数据
+            # debug_image_tensor = debug_image_tensor * 0.5 + 0.5 # 逆标准化: 从 [-1, 1] -> [0, 1]
+            # debug_image_tensor = debug_image_tensor.clamp(0, 1) # 确保数值在 0-1 范围内
+
+            # pil_image_to_save = to_pil(debug_image_tensor)
+
+            # save_path = os.path.join(save_dir, f"sample_processed.png")
+            # pil_image_to_save.save(save_path)
+
+
             images.append(image)
 
         images = torch.stack(images)
@@ -772,11 +844,14 @@ class VLNActionDataset(Dataset):
         if start_idx != 0:
             sources[0]["value"] += f' These are your historical observations: {DEFAULT_MEMORY_TOKEN}.'
         
+        # 把instructions进行替换
         sources[0]["value"] = sources[0]["value"].replace('<instruction>.', instructions[ins_id])
+
         interleave_sources = self.prepare_conversation(sources, list(actions))
         
         data_dict = preprocess([interleave_sources], self.tokenizer, True)
 
+        # 相当于一个batch就是包含了numframes这么长的数据，然后这些数据又根据要预测的steps去重新进行组织
         return data_dict["input_ids"][0], \
             data_dict["labels"][0], \
             images, \
@@ -807,9 +882,11 @@ def collate_fn(batch, tokenizer):
     labels_batch = pad_sequence(labels_batch, batch_first=True, padding_value=IGNORE_INDEX)
     
     input_ids_batch = input_ids_batch[:, :tokenizer.model_max_length]
+    # 防止因为某个批次里有极长的样本导致填充后超出模型限制
     labels_batch = labels_batch[:, :tokenizer.model_max_length]
-    attention_mask = input_ids_batch.ne(tokenizer.pad_token_id)
-    
+    # 模型需要知道哪些 Token 是真实数据，哪些是为了对齐而填充的 [PAD]。这行代码会生成一个attention_mask（注意力掩码），真实 Token 的位置是 True (或 1)，填充 Token 的位置是 False (或 0)。 
+    attention_mask = input_ids_batch.ne(tokenizer.pad_token_id) 
+
     img_lens = np.array([i.size(0) for i in image_batch])
 
     if time_ids_batch[0] is not None:

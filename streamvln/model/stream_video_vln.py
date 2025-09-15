@@ -27,6 +27,8 @@ class StreamVLNModel(LlavaQwenModel):
         self.config.mm_use_im_patch_token = False
 
         self.num_history = getattr(config, 'num_history', None)
+        self.current_stride = getattr(config, 'current_stride', 2)
+        self.history_stride = getattr(config, 'history_stride', 2)
         
 
 class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
@@ -42,6 +44,9 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         
         self.model = StreamVLNModel(config, **kwargs)
         self.vocab_size = config.vocab_size
+        
+        # 此处添加了一个新的线性层作为语言模型的输出层，也就是一个预测语言的头
+        # 输入维度是config.hidden_size，输出维度是config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
         # Initialize weights and apply final processing
@@ -101,14 +106,14 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
     
     def encode_rgbd(self, images, depths, poses, intrinsics, time_ids=None, task_ids=None):
         batch_size, num_view, _, H, W = images.shape
-        image_features = self.get_model().get_vision_tower()(images.flatten(0,1))
+        image_features = self.get_model().get_vision_tower()(images.flatten(0,1)) # 因为视觉处理是patch 14，所以每一张图像被处理成为了27x27个小patch，最后单张图像输出（729， 1152）的信息
         
         num_patches_per_side = self.get_model().get_vision_tower().num_patches_per_side
         # (B, V, C, num_patch, num_patch)
-        image_features = image_features.permute(0, 2, 1).reshape(batch_size, num_view, -1, num_patches_per_side, num_patches_per_side)
+        image_features = image_features.permute(0, 2, 1).reshape(batch_size, num_view, -1, num_patches_per_side, num_patches_per_side) # [批次大小, 帧数, 特征维度, 网格高度, 网格宽度]
         
         # batch_size, num_view, H, W = depths.shape
-        if num_view != 1:
+        if num_view != 1:  # 对每一batch的memory_features的token进行处理
             memory_features = []
             image_features_ = []
             for b in range(batch_size):
@@ -116,30 +121,33 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
                     start_idx = time_ids[b][0]
                 else:
                     start_idx = 0
-                if start_idx == 0:
+                if start_idx == 0: # 也就是没有history的情况
                     memory_features.append(None)
                     image_features_.append(image_features[b])
                     continue
                 else:
                     history_idx = self.model.num_history
-                    image_features_.append(image_features[b, history_idx:])
+                    image_features_.append(image_features[b, history_idx:]) # 相当于取了这个batch的后num_view-history_idx个图像 作为当前的image_features，合理，之前就是这么组织的
                 his_image_feature = image_features[b, :history_idx].flatten(2,3).permute(0,2,1)
                 his_image_feature = self.get_model().mm_projector(his_image_feature)
-                his_image_feature = self.get_2dPool(his_image_feature, 2) # [N, 196, 1152]
-                
-                memory_features.append(his_image_feature.flatten(0,1).unsqueeze(0))
+                his_image_feature = self.get_2dPool(his_image_feature, self.model.history_stride) # [N, 196, 1152]
+
+                memory_features.append(his_image_feature.flatten(0,1).unsqueeze(0)) # [1, N * 196, 1152]
             image_features = image_features_
         else:
             memory_features = [None] * batch_size
         
-        image_features_=[]
+        image_features_=[] # 对每一batch的image_features的token进行处理
         for j, image_feature in enumerate(image_features):
-            image_feature = image_feature.flatten(2,3).permute(0,2,1)
-            image_feature = self.get_model().mm_projector(image_feature)
-            image_feature = self.get_2dPool(image_feature, 2)
+            image_feature = image_feature.flatten(2,3).permute(0,2,1) # [8, 1152, 27, 27] --> [8, 729, 1152] (V, Tokens, C)
+            image_feature = self.get_model().mm_projector(image_feature) # [8, 729, 1152] --> [8, 729, 3584]
+            image_feature = self.get_2dPool(image_feature, self.model.current_stride) # [8, 729, 3584] --> [8, 196, 3584]
             image_features_.append(image_feature)
-        image_features = image_features_
-        return image_features, memory_features
+        image_features = image_features_ 
+
+        # image_features --> [B, 8, 196, 3584]  memory_features --> [B, 1, N*196, 3584]
+        # 因为这8张current images共用同一个history memory_features， 所以这里需要把memory_features进行flatten
+        return image_features, memory_features # 这两个都是list，list的len就是batch的大小，然后里面内容一一对应
    
     def prepare_inputs_labels_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels, 
@@ -179,35 +187,38 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         new_input_embeds = []
         new_labels = [] if labels is not None else None
         
-        for batch_idx, cur_input_ids in enumerate(input_ids):
+        for batch_idx, cur_input_ids in enumerate(input_ids): # 遍历batch
             num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
             num_memories = (cur_input_ids == MEMORY_TOKEN_INDEX).sum()
             # print(batch_idx, num_images, num_memories)
             num_specials = num_images + num_memories
-            image_token_indices = torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist()
-            memory_token_indices = torch.where(cur_input_ids == MEMORY_TOKEN_INDEX)[0].tolist()
+            image_token_indices = torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() # 取出之前预先放置的image token的index
+            memory_token_indices = torch.where(cur_input_ids == MEMORY_TOKEN_INDEX)[0].tolist() # 同上
             special_token_indices = sorted(image_token_indices + memory_token_indices)
-            special_tokens = [cur_input_ids[indice] for indice in special_token_indices]
+            special_tokens = [cur_input_ids[indice] for indice in special_token_indices] # 取出每一个special tokens
             special_token_indices = [-1] + special_token_indices + [cur_input_ids.shape[0]]
             
             cur_input_ids_noim = []
             cur_labels = labels[batch_idx]
             cur_labels_noim = []
             
+            # 把所有的special token之间的token都取出来
             for i in range(len(special_token_indices) - 1):
                 cur_input_ids_noim.append(cur_input_ids[special_token_indices[i]+1:special_token_indices[i+1]])
                 cur_labels_noim.append(cur_labels[special_token_indices[i]+1:special_token_indices[i+1]])
-                
-            split_sizes = [x.shape[0] for x in cur_labels_noim]
-            cur_input_embeds = self.get_model().embed_tokens(torch.cat(cur_input_ids_noim))
-            cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0)
+            
+            # 统计每一段没有image或者memory的tokens的数量
+            split_sizes = [x.shape[0] for x in cur_labels_noim] 
+            cur_input_embeds = self.get_model().embed_tokens(torch.cat(cur_input_ids_noim)) # 将no images的token转化为embedding，首先cat成1维，然后用model去embed成3584维度的feature
+            cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0) # 再把它们split开，根据之前的size。这样进入embedding效率最高
             cur_new_input_embeds = []
             cur_new_labels = []
             
             cur_img_id = 0
             cur_mem_id = 0
             
-            for i in range(num_specials + 1):  # num_images = 1? [0, 1]
+            # 重组与融合 串珠子 遍历所有的special tokens,把之前的image token给放到输入的input中去，在labels中images不会进行预测，所以填充IGNORE
+            for i in range(num_specials + 1):  # num_images = 1? [0, 1] 
                 cur_new_input_embeds.append(cur_input_embeds_no_im[i])
                 cur_new_labels.append(cur_labels_noim[i])
                 if i < num_specials:
@@ -234,17 +245,17 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
             cur_new_labels = torch.cat(cur_new_labels)
 
             # assert len(cur_new_input_embeds) <= 4096
-            new_input_embeds.append(cur_new_input_embeds)
-            new_labels.append(cur_new_labels)
+            new_input_embeds.append(cur_new_input_embeds) # [1899, 3584]
+            new_labels.append(cur_new_labels) # [1899]
         
         # Truncate sequences to max length as image embeddings can make the sequence longer
         tokenizer_model_max_length = getattr(self.config, 'tokenizer_model_max_length', None)
-        if tokenizer_model_max_length is not None:
+        if tokenizer_model_max_length is not None: # 如果长于max tokens，会进行截断操作
             new_input_embeds = [x[:tokenizer_model_max_length] for x in new_input_embeds]
             new_labels = [x[:tokenizer_model_max_length] for x in new_labels]
             
         # Combine them
-        max_len = max(x.shape[0] for x in new_input_embeds)
+        max_len = max(x.shape[0] for x in new_input_embeds) # 获取这个batzhsize中最长的
         batch_size = len(new_input_embeds)
 
         new_input_embeds_padded = []
@@ -252,7 +263,7 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         attention_mask = torch.zeros((batch_size, max_len), dtype=attention_mask.dtype, device=attention_mask.device)
         position_ids = torch.zeros((batch_size, max_len), dtype=position_ids.dtype, device=position_ids.device)
         
-        for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
+        for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)): # 遍历batch
             cur_len = cur_new_embed.shape[0]
             if getattr(self.config, 'tokenizer_padding_side', 'right') == "left":
                 new_input_embeds_padded.append(torch.cat((
