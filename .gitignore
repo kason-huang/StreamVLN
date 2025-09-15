@@ -9,3 +9,13 @@ log/
 *.out
 *.err
 wandb/
+
+# Debug images and visualizations
+debug_images/
+debug_imgs/
+debug_vis/
+debug_visualization/
+debug_*
+*_debug.png
+*_debug.jpg
+*_debug.jpeg
