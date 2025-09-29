@@ -1786,6 +1786,10 @@ def train(attn_implementation=None):
         model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
         model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
 
+    # 量化
+    # 高精度 (FP32) → 中等精度 (BF16) → 低精度 (4-bit/8-bit)
+    #  ↓               ↓               ↓
+    # 归一化层       LoRA/输出层      其他层参数
     if training_args.bits in [4, 8]:
         from peft.tuners.lora import LoraLayer
 

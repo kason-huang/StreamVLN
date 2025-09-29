@@ -1,0 +1,31 @@
+services:
+  desktop:
+    image: streamvln:latest
+    container_name: streamvln
+    build:
+      context: .
+      dockerfile: Dockerfile.update
+    privileged: true
+    tty: true
+    stdin_open: true
+    shm_size: 16g
+    cap_add:
+      - SYS_PTRACE
+    network_mode: bridge
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              count: all
+              # device_ids: ['0', '3']
+    environment:
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      - HF_DATASETS_OFFLINE=1
+    command: ["/bin/bash", "/scripts/startup.sh", "bash"]
+    volumes:
+      - ${PWD}:/opt/StreamVLN
+      - ${DATA_PATH}:/opt/StreamVLN/data
+      - ${CKPT_PATH}:/opt/StreamVLN/checkpoints/hf_home

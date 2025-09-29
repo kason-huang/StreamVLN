@@ -1,0 +1,6 @@
+FROM streamvln:base
+
+COPY . /opt/StreamVLN
+WORKDIR /opt/StreamVLN
+RUN pip install --no-cache-dir -r requirements.txt
+
