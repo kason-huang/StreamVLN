@@ -10,6 +10,7 @@ import random
 import argparse
 import itertools
 import quaternion
+from transformers import BitsAndBytesConfig
 import transformers
 import numpy as np
 
@@ -327,9 +328,10 @@ class VLNEvaluator:
                         
                         for key, value in input_dict.items():
                             if key in ['images', 'depths', 'poses', 'intrinsics']:
-                                input_dict[key] = input_dict[key].to(torch.bfloat16)
+                                input_dict[key] = input_dict[key].to(torch.float16)
                         
-                        outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+                        #outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+                        outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=256, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
                         
                         output_ids = outputs.sequences
                         past_key_values = outputs.past_key_values
@@ -486,6 +488,84 @@ def pad_tensors(tensors, lens=None, max_len=None, pad=0):
         output.data[i, :l, ...] = t.data
     return output
    
+def detect_best_attention_implementation():
+    """
+    Automatically detect the best available attention implementation with runtime compatibility checks.
+    
+    Returns:
+        str: Best available attention implementation ('flash_attention_2', 'sdpa', or 'eager')
+    
+    Priority order:
+    1. flash_attention_2 (best performance, requires Ampere GPU or newer)
+    2. sdpa (good performance, PyTorch 2.0+, with runtime validation)
+    3. eager (fallback, highest memory usage)
+    """
+    
+    # Check if current GPU supports FlashAttention (Ampere or newer)
+    def _is_ampere_or_newer():
+        if not torch.cuda.is_available():
+            return False
+        major, _ = torch.cuda.get_device_capability()
+        return major >= 8
+    
+    # Try Flash Attention 2 with runtime compatibility check
+    try:
+        import flash_attn
+        
+        if hasattr(flash_attn, 'flash_attn_func') and _is_ampere_or_newer():
+            # Test with small tensors
+            if torch.cuda.is_available():
+                device = torch.cuda.current_device()
+                q = torch.randn(1, 32, 64, device=f'cuda:{device}', dtype=torch.float16)
+                k = torch.randn(1, 32, 64, device=f'cuda:{device}', dtype=torch.float16)
+                v = torch.randn(1, 32, 64, device=f'cuda:{device}', dtype=torch.float16)
+                
+                flash_attn.flash_attn_func(q, k, v)
+                print("✓ Flash Attention 2 available and compatible")
+                return 'flash_attention_2'
+                
+    except (ImportError, RuntimeError) as e:
+        if "FlashAttention only supports Ampere GPUs" in str(e):
+            capability = torch.cuda.get_device_capability() if torch.cuda.is_available() else None
+            if capability:
+                major, minor = capability
+                print(f"⚠ GPU compute capability {major}.{minor} incompatible with FlashAttention (requires >= 8.0)")
+        else:
+            print(f"✗ Flash Attention unavailable: {type(e).__name__}")
+    
+    # Check PyTorch SDPA with runtime test and configure backends only when using SDPA
+    if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+        try:
+            # Configure SDPA backends to avoid cutlass issues
+            torch.backends.cuda.enable_flash_sdp(True)
+            torch.backends.cuda.enable_math_sdp(True)
+            torch.backends.cuda.enable_mem_efficient_sdp(False)  # Disable cutlass
+            
+            # Test SDPA with small tensors
+            if torch.cuda.is_available():
+                device = torch.cuda.current_device()
+                batch_size, num_heads, seq_len, head_dim = 1, 8, 32, 64
+                
+                q = torch.randn(batch_size, num_heads, seq_len, head_dim, device=f'cuda:{device}', dtype=torch.float16)
+                k = torch.randn(batch_size, num_heads, seq_len, head_dim, device=f'cuda:{device}', dtype=torch.float16)
+                v = torch.randn(batch_size, num_heads, seq_len, head_dim, device=f'cuda:{device}', dtype=torch.float16)
+                
+                torch.nn.functional.scaled_dot_product_attention(q, k, v)
+                print("✓ PyTorch SDPA available and compatible (cutlass disabled)")
+                return 'sdpa'
+                
+        except RuntimeError as e:
+            if "cutlassF" in str(e) or "no kernel found" in str(e):
+                print(f"✗ SDPA cutlass kernel error: {e}")
+            else:
+                print(f"✗ SDPA runtime error: {e}")
+        except Exception as e:
+            print(f"✗ SDPA configuration failed: {e}")
+    
+    # Final fallback
+    print("⚠ Using eager attention (may be slower)")
+    return 'eager'
+
 def eval():
     global local_rank
     parser = argparse.ArgumentParser()
@@ -514,7 +594,7 @@ def eval():
     parser.add_argument('--vision_tower_path', type=str, default=None,
             help='Path to vision tower model (e.g., checkpoints/google/siglip-so400m-patch14-384)')
     parser.add_argument("--quantization_bits", type=int,
-            help="Quantization bits. 4 for 4-bit, 8 for 8-bit.")
+            help="Quantization bits. 4 for 4-bit, 8 for 8-bit.", default=-1)
     
     args = parser.parse_args()
     init_distributed_mode(args)
@@ -524,17 +604,36 @@ def eval():
                                                         model_max_length=args.model_max_length,
                                                         padding_side="right")
     
+    num_gpus = torch.cuda.device_count()
+    max_memory = {i: "14GiB" for i in range(num_gpus)}  # 用整型键
+    max_memory["cpu"] = "64GiB"  # 或者用 "disk": "64GiB" 做磁盘offload
+    qconf = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+    )
+
+    attn_implementation = detect_best_attention_implementation()
+
     config = transformers.AutoConfig.from_pretrained(args.model_path)
     model = StreamVLNForCausalLM.from_pretrained(
                 args.model_path,
-                attn_implementation="flash_attention_2",
-                torch_dtype=torch.bfloat16,
+                attn_implementation=attn_implementation,
+                torch_dtype=torch.float16,
                 config=config,
-                low_cpu_mem_usage=False,
+                low_cpu_mem_usage=True,
+                device_map="auto",
+                quantization_config=qconf,
+                max_memory=max_memory,
+                offload_folder="offload",
+                offload_buffers=True,
+                offload_state=True,
+                offload_optimizer=True,
                 )
     model.model.num_history = args.num_history
     model.requires_grad_(False)
-    model.to(local_rank)
+    # model.to(local_rank)
     evaluate(model, tokenizer, args)
 
 

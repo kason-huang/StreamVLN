@@ -21,11 +21,13 @@ services:
               count: all
               # device_ids: ['0', '3']
     environment:
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+      - DISPLAY=:0
       - HF_HUB_OFFLINE=1
       - TRANSFORMERS_OFFLINE=1
       - HF_DATASETS_OFFLINE=1
-    command: ["/bin/bash", "/scripts/startup.sh", "bash"]
+    # command: ["/bin/bash", "/scripts/startup.sh", "bash"]
     volumes:
       - ${PWD}:/opt/StreamVLN
       - ${DATA_PATH}:/opt/StreamVLN/data
-      - ${CKPT_PATH}:/opt/StreamVLN/checkpoints/hf_home
+      - ${CKPT_PATH}:/opt/StreamVLN/checkpoints

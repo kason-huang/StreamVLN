@@ -3,4 +3,6 @@ FROM streamvln:base
 COPY . /opt/StreamVLN
 WORKDIR /opt/StreamVLN
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install protobuf==3.20.1
+RUN pip install --upgrade bitsandbytes
 

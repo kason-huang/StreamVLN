@@ -224,7 +224,8 @@ class SigLipAttention(nn.Module):
             attn_weights = attn_weights + attention_mask
 
         # upcast attention to fp32
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        # attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
 
@@ -564,8 +565,31 @@ class SigLipVisionTower(nn.Module):
         if self.is_loaded:
             rank0_print("{} is already loaded, `load_model` called again, skipping.".format(self.vision_tower_name))
             return
+        
+        # 尝试使用本地路径或检查离线模式
+        import os
+        model_path = self.vision_tower_name
+        
+        # 如果启用了离线模式，尝试使用本地路径
+        if os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1":
+            # 检查是否存在本地模型目录
+            local_model_paths = [
+                f"./checkpoints/{self.vision_tower_name}",
+                f"./checkpoints/{self.vision_tower_name.replace('/', '_')}",
+            ]
+            
+            for path in local_model_paths:
+                if os.path.exists(path) and os.path.exists(os.path.join(path, "config.json")):
+                    model_path = path
+                    rank0_print(f"Found local model at: {model_path}")
+                    break
+            else:
+                rank0_print(f"Warning: Offline mode enabled but no local model found for {self.vision_tower_name}")
+                rank0_print(f"Searched paths: {local_model_paths}")
+                # 仍然尝试原始路径，可能会失败但提供错误信息
 
-        self.vision_tower = SigLipVisionModel.from_pretrained(self.vision_tower_name, device_map=device_map)
+
+        self.vision_tower = SigLipVisionModel.from_pretrained(model_path, device_map=device_map)
 
         del self.vision_tower.vision_model.encoder.layers[-1:]
         self.vision_tower.vision_model.head = nn.Identity()

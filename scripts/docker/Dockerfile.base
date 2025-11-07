@@ -5,7 +5,7 @@ WORKDIR /opt
 
 RUN apt-get update && apt-get install -y --no-install-recommends libjpeg-dev libglm-dev \
     libgl1-mesa-glx libegl1-mesa-dev mesa-utils xorg-dev freeglut3-dev libxcb-keysyms1 \
-    git 
+    git xvfb 
 
 RUN pip install --no-cache-dir "numpy<2" "opencv-python-headless<4.8"
 ENV CMAKE_ARGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
@@ -17,3 +17,16 @@ RUN git clone --branch v0.2.4 https://github.com/facebookresearch/habitat-sim.gi
 RUN git clone --branch v0.2.4 https://github.com/facebookresearch/habitat-lab.git \
     && cd habitat-lab && pip install --no-cache-dir -e habitat-lab \
     && pip install --no-cache-dir -e habitat-baselines
+
+RUN apt install vim
+
+RUN mkdir -p /usr/share/glvnd/egl_vendor.d && \
+    printf '{\n  "file_format_version": "1.0.0",\n  "ICD": { "library_path": "libEGL_nvidia.so.0" }\n}\n' \
+    > /usr/share/glvnd/egl_vendor.d/50_nvidia.json
+
+# force GLVND read this
+ENV __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_nvidia.json
+
+# Set up headless display
+ENV DISPLAY=:99
+RUN echo "export DISPLAY=:99" >> ~/.bashrc
