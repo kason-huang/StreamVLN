@@ -66,6 +66,9 @@ We test under the following environment:
     ```bash
     git clone https://github.com/OpenRobotLab/StreamVLN.git
     cd StreamVLN
+    pip install -r requirements.txt
+    pip install protobuf==3.20.1
+    pip install --upgrade bitsandbytes 
     ```
 
 <!-- 3. **Data Preparation**
