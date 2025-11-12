@@ -1584,6 +1584,7 @@ def train(attn_implementation=None):
     # import ipdb; ipdb.set_trace()
     model = get_model(model_args, training_args, data_args, bnb_model_from_pretrained_args)
     model.config.use_cache = False
+    # RoPE缩放配置
     if model_args.rope_scaling_factor is not None and model_args.rope_scaling_type is not None:
         model.config.rope_scaling = {
             "factor": model_args.rope_scaling_factor,
@@ -1599,6 +1600,7 @@ def train(attn_implementation=None):
         model.config.torch_dtype = torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32)
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
 
+    # 梯度检查点
     if training_args.gradient_checkpointing:
         if hasattr(model, "enable_input_require_grads"):
             model.enable_input_require_grads()
@@ -1631,6 +1633,10 @@ def train(attn_implementation=None):
         model = get_peft_model(model, lora_config)
         # import ipdb; ipdb.set_trace()
 
+    ## 模块: Tokenizer初始化
+    # 根据模型类型选择合适的tokenizer
+    # 配置padding策略和特殊token
+    # 设置对话模板
     if "mistral" in model_args.model_name_or_path.lower() or "mixtral" in model_args.model_name_or_path.lower() or "zephyr" in model_args.model_name_or_path.lower():
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="left")
     elif "qwen" in model_args.model_name_or_path.lower():
@@ -1669,7 +1675,7 @@ def train(attn_implementation=None):
         else:
             conversation_lib.default_conversation = conversation_lib.conv_templates["vicuna_v1"]
 
-    
+    ## 视觉模块化初始化
     if model_args.vision_tower is not None:
         model.get_model().initialize_vision_modules(model_args=model_args, fsdp=None)
 
@@ -1679,6 +1685,7 @@ def train(attn_implementation=None):
         data_args.image_processor = vision_tower.image_processor
         data_args.is_multimodal = True
 
+        # 图像网格配置
         model.config.image_aspect_ratio = data_args.image_aspect_ratio
         if data_args.image_grid_pinpoints is not None:
             if isinstance(data_args.image_grid_pinpoints, str) and "x" in data_args.image_grid_pinpoints:
@@ -1709,7 +1716,8 @@ def train(attn_implementation=None):
         model.config.faster_token_stride = model_args.faster_token_stride
         model.config.force_sample = data_args.force_sample
         model.config.mm_spatial_pool_stride = model_args.mm_spatial_pool_stride 
-
+        
+        # 可训练参数配置子模块
         ### Deciding train which part of the model
         if model_args.mm_tunable_parts is None:  # traditional way of deciding which part to train
             model.config.tune_mm_mlp_adapter = training_args.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter
@@ -1804,6 +1812,7 @@ def train(attn_implementation=None):
                     if training_args.bf16 and module.weight.dtype == torch.float32:
                         module = module.to(torch.bfloat16)
 
+    # 数据增强配置
     if data_args.data_augmentation:
         data_args.transform_train = v2.Compose([
             v2.ToImage(),
@@ -1817,6 +1826,7 @@ def train(attn_implementation=None):
         data_args.transform_train = None
 
     # import ipdb; ipdb.set_trace()
+    # 数据模块创建
     data_module = make_supervised_data_module(tokenizer=tokenizer,vision_tower=vision_tower, data_args=data_args)
     
     params_no_grad = [
