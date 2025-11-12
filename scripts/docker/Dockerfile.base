@@ -10,9 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends libjpeg-dev lib
 RUN pip install --no-cache-dir "numpy<2" "opencv-python-headless<4.8"
 ENV CMAKE_ARGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
 
-RUN git clone --branch v0.2.4 https://github.com/facebookresearch/habitat-sim.git \
-    && cd habitat-sim && pip install --no-cache-dir -r requirements.txt \
-    && python setup.py install --bullet --with-cuda && cd ..
+# RUN git clone --branch v0.2.4 https://github.com/facebookresearch/habitat-sim.git \
+#     && cd habitat-sim && pip install --no-cache-dir -r requirements.txt \
+#     && python setup.py install --bullet --with-cuda && cd ..
+conda install habitat-sim==0.2.4 withbullet headless -c conda-forge -c aihabitat
 
 RUN git clone --branch v0.2.4 https://github.com/facebookresearch/habitat-lab.git \
     && cd habitat-lab && pip install --no-cache-dir -e habitat-lab \
@@ -26,7 +27,3 @@ RUN mkdir -p /usr/share/glvnd/egl_vendor.d && \
 
 # force GLVND read this
 ENV __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_nvidia.json
-
-# Set up headless display
-ENV DISPLAY=:99
-RUN echo "export DISPLAY=:99" >> ~/.bashrc

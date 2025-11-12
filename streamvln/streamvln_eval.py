@@ -327,10 +327,9 @@ class VLNEvaluator:
                         
                         for key, value in input_dict.items():
                             if key in ['images', 'depths', 'poses', 'intrinsics']:
-                                input_dict[key] = input_dict[key].to(torch.float16)
+                                input_dict[key] = input_dict[key].to(torch.bfloat16)
                         
-                        #outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
-                        outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=256, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+                        outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
                         
                         output_ids = outputs.sequences
                         past_key_values = outputs.past_key_values

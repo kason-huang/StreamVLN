@@ -366,9 +366,15 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         attention_mask = kwargs.pop("attention_mask", None)
         time_ids = kwargs.pop("time_ids", None)
         task_ids = kwargs.pop("task_type", None)
+        # 多模态分支处理
         if "inputs_embeds" in kwargs:
             raise NotImplementedError("`inputs_embeds` is not supported")
         if images is not None:
+            # 方法功能：
+            # 视觉编码：通过视觉tower提取图像特征
+            # 特征投影：将视觉特征投影到语言模型空间
+            # Token替换：将<image>token替换为实际的视觉特征
+            # 序列对齐：确保输入序列与位置编码、注意力掩码对齐
             (
                 inputs,
                 position_ids,

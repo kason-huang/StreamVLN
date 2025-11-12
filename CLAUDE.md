@@ -111,3 +111,5 @@ data/
 
 For deployment on physical robots, see `realworld/realworld.md` for Unitree Go2 integration instructions and safety considerations.
 - streamvln的论文在 @"docs/Wei et al. - 2025 - StreamVLN Streaming Vision-and-Language Navigation via SlowFast Context Modeling.pdf" 你分析原理的时候可以使用这个文件
+
+使用中文与我交流

@@ -17,6 +17,6 @@ torchrun --nproc_per_node=2 \
     --num_frames 16 \
     --num_history 8 \
     --model_max_length 2048 \
-    --save_video \
+    # --save_video \
     --vision_tower_path $VISION_MODEL_VERSION \
     --quantization_bits 4
