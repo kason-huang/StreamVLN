@@ -141,6 +141,10 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         image_features = image_features_
         return image_features, memory_features
    
+    # 视觉编码：通过视觉tower提取图像特征
+    # 特征投影：将视觉特征投影到语言模型空间
+    # Token替换：将<image>token替换为实际的视觉特征
+    # 序列对齐：确保输入序列与位置编码、注意力掩码对齐
     def prepare_inputs_labels_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels, 
         images, image_sizes, depths, poses, intrinsics, time_ids=None, task_ids=None
@@ -148,10 +152,12 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         vision_tower = self.get_vision_tower()
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
             return input_ids, position_ids, attention_mask, past_key_values, None, labels
-
+        # 视觉token和记忆token
         image_features, memory_features = self.encode_rgbd(images, depths, poses, intrinsics, time_ids, task_ids)
 
         # TODO: image start / end is not implemented here to support pretraining.
+        # mm_mlp_adapter: 检查是否训练多模态投影器
+        # mm_use_im_start_end: 检查是否使用图像开始/结束token
         if getattr(self.config, 'tune_mm_mlp_adapter', False) and getattr(self.config, 'mm_use_im_start_end', False):
             raise NotImplementedError
         
