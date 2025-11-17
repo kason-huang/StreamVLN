@@ -221,9 +221,10 @@ def split_both_files(input_annotations: str, input_envdrop_gz: str, output_dir: 
         # 创建envdrop输出目录
         (output_path / "envdrop").mkdir(parents=True, exist_ok=True)
 
-        # 保存切分后的envdrop数据
+        # 保存切分后的envdrop数据，同时包含instruction_vocab
         chunk_envdrop_data = {
-            "episodes": chunk_envdrop_episodes
+            "episodes": chunk_envdrop_episodes,
+            "instruction_vocab": envdrop_data.get("instruction_vocab", {})
         }
 
         print(f"正在生成envdrop第 {i+1}/{n_splits} 份: {envdrop_output_filename} ({len(chunk_envdrop_episodes)} 个episodes)")
@@ -304,10 +305,12 @@ def create_batch_script(output_dir: str, files_dict: Dict[str, List[str]], batch
             if i % batch_size == 0:
                 f.write(f"\n# 批次 {(i // batch_size) + 1} - Annotations\n")
 
-            # 提取相对路径用于脚本
-            rel_path = Path(data_file).relative_to(Path(output_dir))
+            # 直接构造相对于项目根目录的路径
+            rel_path = f"data/trajectory_data/EnvDrop/tmp/annotations/annotations_part_{i+1:03d}_of_{len(annotation_data_files):03d}.json"
+            config_file = f"data/trajectory_data/EnvDrop/tmp/config/envdrop_part_{i+1:03d}_of_{len(annotation_data_files):03d}.yaml"
+
             f.write(f"echo '处理annotations文件: {rel_path}'\n")
-            f.write(f"python3 trajectory_save_rgb.py --annot_path '{rel_path}'\n")
+            f.write(f"python3 trajectory_save_rgb.py '{rel_path}' '{config_file}'\n")
             f.write("echo 'annotations文件处理完成'\n\n")
 
         # 处理envdrop文件（如果需要）
@@ -346,7 +349,7 @@ def main():
 
     try:
         # 设置默认路径
-        base_dir = Path("/root/workspace/lab/StreamVLN")
+        base_dir = Path(".")
         default_annotations = base_dir / "data/trajectory_data/EnvDrop/annotations.json"
         default_envdrop = base_dir / "data/datasets/envdrop/envdrop.json.gz"
 

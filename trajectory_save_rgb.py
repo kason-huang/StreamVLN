@@ -8,7 +8,7 @@ from habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
 from streamvln.habitat_extensions import measures
 
 
-def save_rgb(annot_path):
+def save_rgb(annot_path, config_path):
     CONFIG_PATH = "config/vln_r2r.yaml"  # Path to the Habitat config file
     ANNOT_PATH = annot_path  # Path to the annotations file
     GOAL_RADIUS = 0.25  # Radius for the goal in meters. not used if get actions from annotations
@@ -47,6 +47,9 @@ def save_rgb(annot_path):
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         annot_path = sys.argv[1]  # 获取第一个参数
+        config_path = sys.argv[2]
 
     else:
        annot_path = "data/trajectory_data/EnvDrop/annotations.json" 
+       config_path = "config/vln_r2r.yaml"
+    save_rgb(annot_path, config_path)
