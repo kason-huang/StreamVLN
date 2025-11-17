@@ -53,7 +53,8 @@ echo "NPROC_PER_NODE: $NPROC_PER_NODE"
 echo "Master endpoint: $MASTER_ADDR:$MASTER_PORT"
 echo "HF cache dir: $HF_HOME"
 
-VIDEO_FOLDER="data/trajectory_data/R2R","data/trajectory_data/RxR","data/trajectory_data/EnvDrop"
+#VIDEO_FOLDER="data/trajectory_data/R2R","data/trajectory_data/RxR","data/trajectory_data/EnvDrop"
+VIDEO_FOLDER="data/trajectory_data/R2R","data/trajectory_data/RxR"
 
 LLM_VERSION="Qwen/Qwen2-7B-Instruct"
 # POSIX-compatible replacement: replace '/' with '_' using tr
@@ -130,7 +131,7 @@ torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE \
     --num_frames 32 \
     --data_augmentation True \
     \
-    --mm_tunable_parts="mm_vision_tower,mm_mlp_adapter,mm_language_model" \
+    --mm_tunable_parts="mm_vision_tower,mm_mlp_adapter" \
     --vision_tower ${VISION_MODEL_VERSION} \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
@@ -172,106 +173,3 @@ torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE \
 #    Master: MASTER_ADDR=192.168.1.100 NNODES=2 bash scripts/streamvln_train.sh
 #    Worker: MASTER_ADDR=192.168.1.100 NNODES=2 bash scripts/streamvln_train.sh
 # 4. Custom HF cache: HF_HOME=/path/to/cache bash scripts/streamvln_train.sh
-
-"""
-完整 torchrun 命令参数分析
-A. 分布式训练参数
-torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE \
-    --rdzv_id=12345 --rdzv_backend=c10d --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT
-分布式协调: 确保多节点/多GPU训练时进程间正确通信
-B. 训练脚本和配置
-streamvln/streamvln_train.py \
---deepspeed scripts/zero2.json \
---model_name_or_path $PREV_STAGE_CHECKPOINT
-streamvln/streamvln_train.py: 主训练脚本
---deepspeed scripts/zero2.json: 使用 DeepSpeed ZeRO-2 优化配置
---model_name_or_path: 预训练模型路径
-C. 模型版本配置
---version $PROMPT_VERSION \
---video_folder ${VIDEO_FOLDER} \
---group_by_task False
---version: 提示版本（qwen_1_5）
---video_folder: 视频数据路径
---group_by_task False: 不按任务分组数据
-D. 视频数据处理参数
---num_history 8 \
---num_future_steps 4 \
---num_frames 32 \
---data_augmentation True
---num_history 8: 历史对话轮数
---num_future_steps 4: 预测未来步数
---num_frames 32: 每个视频段帧数
---data_augmentation True: 启用数据增强
-E. 多模态模型配置
---mm_tunable_parts="mm_vision_tower,mm_mlp_adapter,mm_language_model" \
---vision_tower ${VISION_MODEL_VERSION} \
---mm_projector_type mlp2x_gelu \
---mm_vision_select_layer -2 \
---mm_use_im_start_end False \
---mm_use_im_patch_token False
---mm_tunable_parts: 可训练的多模态组件
---vision_tower: 视觉编码器版本
---mm_projector_type: 多模态投影层类型
---mm_vision_select_layer -2: 选择视觉编码器倒数第二层
---mm_use_im_start_end False: 不使用图像开始/结束标记
-F. 图像处理配置
---image_aspect_ratio anyres_max_9 \
---image_grid_pinpoints "(1x1),...,(6x6)"
---image_aspect_ratio anyres_max_9: 自适应宽高比，最大9倍
---image_grid_pinpoints: 图像网格分割点配置
-G. 训练超参数
---bf16 True \
---num_train_epochs 1 \
---per_device_train_batch_size 2 \
---per_device_eval_batch_size 4 \
---gradient_accumulation_steps 2 \
---learning_rate 2e-5 \
---mm_vision_tower_lr 5e-6 \
---weight_decay 0. \
---warmup_ratio 0.075
---bf16 True: 使用 bfloat16 混合精度训练
---num_train_epochs 1: 训练轮数
---per_device_train_batch_size 2: 每设备训练批次大小
---gradient_accumulation_steps 2: 梯度累积步数
---learning_rate 2e-5: 主学习率
---mm_vision_tower_lr 5e-6: 视觉塔学习率（更低）
---warmup_ratio 0.075: 预热比例
-H. 学习率调度
---lr_scheduler_type "cosine_with_min_lr" \
---lr_scheduler_kwargs '{"min_lr": 1.85e-05}'
---lr_scheduler_type: 余弦退火调度器，带最小学习率
---lr_scheduler_kwargs: 最小学习率参数
-I. 模型和优化配置
---model_max_length 32768 \
---gradient_checkpointing True \
---torch_compile True \
---torch_compile_backend "inductor" \
---tf32 True
---model_max_length 32768: 最大序列长度
---gradient_checkpointing True: 梯度检查点节省显存
---torch_compile True: PyTorch 2.0 编译优化
---torch_compile_backend "inductor": 使用 Inductor 后端
---tf32 True: 在 A100/H100 上使用 TF32
-J. 数据加载和输出
---dataloader_num_workers 8 \
---lazy_preprocess True \
---dataloader_drop_last True \
---run_name $MID_RUN_NAME \
---output_dir checkpoints/$MID_RUN_NAME \
---save_strategy "epoch" \
---save_total_limit 1 \
---logging_steps 10 \
---report_to tensorboard
---dataloader_num_workers 8: 数据加载工作进程数
---lazy_preprocess True: 延迟预处理
---dataloader_drop_last True: 丢弃不完整批次
---save_strategy "epoch": 每轮保存检查点
---report_to tensorboard: 记录到 TensorBoard
-参数设计特点
-内存优化: 使用 DeepSpeed ZeRO-2 + 梯度检查点 + bf16
-性能优化: PyTorch 编译 + 多进程数据加载
-多模态配置: 专门针对视觉-语言导航任务优化
-分布式支持: 完整的多节点多GPU训练支持
-实验管理: 详细的日志记录和检查点保存
-这个配置非常适合大规模 StreamVLN 模型的高效训练。
-"""
