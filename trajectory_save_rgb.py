@@ -9,7 +9,7 @@ from streamvln.habitat_extensions import measures
 
 
 def save_rgb(annot_path, config_path):
-    CONFIG_PATH = "config/vln_r2r.yaml"  # Path to the Habitat config file
+    CONFIG_PATH = config_path  # Path to the Habitat config file
     ANNOT_PATH = annot_path  # Path to the annotations file
     GOAL_RADIUS = 0.25  # Radius for the goal in meters. not used if get actions from annotations
 

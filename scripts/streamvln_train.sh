@@ -1,6 +1,8 @@
 #!/bin/bash
 export HF_HUB_OFFLINE=1
 export HF_HOME=$PWD/checkpoints/hf_home/
+export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128,garbage_collection_threshold:0.6"
+
 # Distributed training parameters
 NNODES=${NNODES:-1}                           # Number of nodes, default 1 (single node)
 NPROC_PER_NODE=${NPROC_PER_NODE:-8}          # GPUs per node, default 8
