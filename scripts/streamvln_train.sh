@@ -133,7 +133,7 @@ torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE \
     --num_frames 32 \
     --data_augmentation True \
     \
-    --mm_tunable_parts="mm_vision_tower,mm_mlp_adapter" \
+    --mm_tunable_parts="mm_vision_tower,mm_mlp_adapter,mm_language_model" \
     --vision_tower ${VISION_MODEL_VERSION} \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \

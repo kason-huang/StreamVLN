@@ -72,4 +72,4 @@ srun torchrun --nnodes=$SLURM_NNODES --nproc_per_node=8 \
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
-    --report_to wandb \
+    --report_to tensorboard \
