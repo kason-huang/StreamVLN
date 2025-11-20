@@ -224,8 +224,10 @@ class SigLipAttention(nn.Module):
             attn_weights = attn_weights + attention_mask
 
         # upcast attention to fp32
-        # attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1).to(query_states.dtype)
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        # for 量化
+        # attn_weights = nn.functional.softmax(attn_weights, dim=-1).to(query_states.dtype)
+        
         attn_weights = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
 

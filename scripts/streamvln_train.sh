@@ -154,8 +154,8 @@ torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE \
     --gradient_accumulation_steps 2 \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
-    --save_steps 20 \
-    --save_total_limit 2 \
+    --save_steps 10000 \
+    --save_total_limit 1 \
     --learning_rate 2e-5 \
     --mm_vision_tower_lr 5e-6 \
     --weight_decay 0. \
