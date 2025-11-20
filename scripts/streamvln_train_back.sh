@@ -58,9 +58,9 @@ echo "NPROC_PER_NODE: $NPROC_PER_NODE"
 echo "Master endpoint: $MASTER_ADDR:$MASTER_PORT"
 echo "HF cache dir: $HF_HOME"
 
-VIDEO_FOLDER="data/trajectory_data/R2R","data/trajectory_data/RxR","data/trajectory_data/EnvDrop"
+# VIDEO_FOLDER="data/trajectory_data/R2R","data/trajectory_data/RxR","data/trajectory_data/EnvDrop"
 #VIDEO_FOLDER="data/trajectory_data/R2R","data/trajectory_data/RxR"
-# VIDEO_FOLDER="data/trajectory_data/R2R_small_1118"
+VIDEO_FOLDER="data/trajectory_data/R2R_small_1118"
 
 LLM_VERSION="Qwen/Qwen2-7B-Instruct"
 # POSIX-compatible replacement: replace '/' with '_' using tr
@@ -153,9 +153,8 @@ torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE \
     --per_device_eval_batch_size 4 \
     --gradient_accumulation_steps 2 \
     --evaluation_strategy "no" \
-    --save_strategy "steps" \
-    --save_steps 20 \
-    --save_total_limit 2 \
+    --save_strategy "epoch" \
+    --save_total_limit 1 \
     --learning_rate 2e-5 \
     --mm_vision_tower_lr 5e-6 \
     --weight_decay 0. \
