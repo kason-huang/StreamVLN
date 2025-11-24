@@ -50,6 +50,8 @@ habitat:
         # success_distance: 3.0
       oracle_navigation_error:
         type: OracleNavigationError
+      failure_modes:
+        type: FailureModeMeasure
         
   dataset:
     type: R2RVLN-v1

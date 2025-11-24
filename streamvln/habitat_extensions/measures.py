@@ -13,13 +13,14 @@ from habitat.core.logging import logger
 from habitat.core.registry import registry
 from habitat.core.simulator import Simulator
 from habitat.core.utils import try_cv2_import
-from habitat.tasks.nav.nav import DistanceToGoal, Success
+from habitat.tasks.nav.nav import DistanceToGoal, Success,NavigationTask
 from habitat.tasks.utils import cartesian_to_polar
 from habitat.utils.geometry_utils import quaternion_rotate_vector
 from habitat.utils.visualizations import fog_of_war
 from habitat.utils.visualizations import maps as habitat_maps
 from numpy import ndarray
 from omegaconf import DictConfig
+from utils.utils import load_json
 # from utils import maps
 # from habitat_extensions.task import RxRVLNCEDatasetV1
 
@@ -217,6 +218,102 @@ class StepsTaken(Measure):
 
     def update_metric(self, *args: Any, **kwargs: Any):
         self._metric += 1.0
+
+
+
+@registry.register_measure
+class FailureModeMeasure(Measure):
+    """
+    Last Mile Navigation failure measures.
+    """
+
+    cls_uuid: str = "failure_modes"
+
+    def __init__(self, config: "DictConfig", *args: Any, **kwargs: Any):
+        self._config = config
+        self._goal_seen = False
+        self._elapsed_steps = 0
+        super().__init__()
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def reset_metric(self, episode, task, observations, *args: Any, **kwargs: Any):
+        task.measurements.check_measure_dependencies(
+            self.uuid, [DistanceToGoal.cls_uuid, Success.cls_uuid]
+        )
+        self._goal_seen = False
+        self._max_area = 0
+        self._elapsed_steps = 0
+        self._reached_within_success_area = False
+        self.update_metric(episode=episode, task=task, observations=observations, *args, **kwargs)  # type: ignore
+
+    def visible_goal_area(self, observations, episode, task):
+        scene_id = episode.scene_id.split("/")[-1]
+        object_category = episode.object_category
+        goal_key = f"{scene_id}_{object_category}"
+        goals = task._dataset.goals_by_category[goal_key]
+        object_ids = [g.object_id for g in goals]
+        semantic_scene = task._sim.semantic_annotations()
+        objs = [o for o in semantic_scene.objects if o.id in object_ids]
+
+        semantic_observation = observations["semantic"]
+        mask = np.zeros_like(semantic_observation)
+        for obj in objs:
+            mask += (semantic_observation == obj.semantic_id).astype(np.int32)
+        area = np.sum(mask) / np.prod(semantic_observation.shape)
+        return area
+
+    def _euclidean_distance(self, position_a, position_b):
+        return np.linalg.norm(position_b - position_a, ord=2)
+
+    def update_metric(
+        self, episode, task: NavigationTask, observations, *args: Any, **kwargs: Any
+    ):
+        try:
+            area = self.visible_goal_area(observations, episode, task)
+            self._max_area = max(self._max_area, area)
+            if area >= 0.01:
+                self._goal_seen = True
+
+            distance_to_target = task.measurements.measures[
+                DistanceToGoal.cls_uuid
+            ].get_metric()
+            is_success = task.measurements.measures[Success.cls_uuid].get_metric()
+
+            if distance_to_target < 0.25:
+                self._reached_within_success_area = True
+
+            metrics = {
+                "stop_too_far": False,
+                "stop_failure": False,
+                "recognition_failure": False,
+                "misidentification": False,
+                "exploration": False,
+            }
+
+            metrics["area_seen"] = self._max_area
+            if not is_success:
+                if self._goal_seen:
+                    if task.is_stop_called:
+                        metrics["stop_too_far"] = True
+                    else:
+                        metrics["stop_failure"] = self._reached_within_success_area
+                        metrics["recognition_failure"] = (
+                            not self._reached_within_success_area
+                        )
+                else:
+                    if task.is_stop_called:
+                        metrics["misidentification"] = True
+                    else:
+                        metrics["exploration"] = True
+            metrics["num_steps"] = self._elapsed_steps
+
+            self._elapsed_steps += 1
+            self._metric = metrics
+        except Exception as e:
+            print("Error ", e)
+
 
 
 # @registry.register_measure
