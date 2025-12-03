@@ -1,0 +1,156 @@
+# @package _global_
+
+defaults:
+  - /habitat: habitat_config_base
+  - /habitat/task: objectnav
+  - /habitat/simulator/agents@habitat.simulator.agents.main_agent: rgbd_agent
+  - /habitat/dataset/objectnav: objectnav_mp3d
+  - /habitat/task/lab_sensors:
+    - gps_sensor
+    - compass_sensor
+  - _self_
+
+# Object Navigation specific configuration
+task:
+  name: "objectnav"
+  dataset_class: "ObjNavActionDataset"
+  description: "Object Navigation with StreamVLN"
+
+# Data configuration
+data:
+  # ObjectNav specific data paths
+  objectnav_video_folder: "data/trajectory_data/ObjectNav"
+  train_episodes: "data/trajectory_data/ObjectNav/train/annotations.json"
+  val_seen_episodes: "data/trajectory_data/ObjectNav/val_seen/annotations.json"
+  val_unseen_episodes: "data/trajectory_data/ObjectNav/val_unseen/annotations.json"
+
+  # Object categories for ObjectNav
+  object_categories_file: "data/objectnav_categories.json"
+  instruction_templates_file: "data/objectnav_instruction_templates.json"
+
+  # Video processing parameters
+  num_frames: 4
+  num_history: 4
+  num_future_steps: 4
+  remove_init_turns: false
+
+  # Image processing
+  image_size: 224
+  is_multimodal: true
+  mm_use_im_start_end: false
+
+  # Training parameters
+  transform_train: null  # Will be set by training script
+
+# Model configuration for ObjectNav
+model:
+  model_name: "stream_video_vln"
+  task_type: "objectnav"
+  max_sequence_length: 2048
+  vision_encoder: "siglip"
+  language_model: "llama3"
+
+  # ObjectNav specific model settings
+  objectnav_head: true
+  use_object_embedding: true
+  object_vocab_size: 1000  # Number of object categories
+
+# Training configuration
+training:
+  # Dataset loading
+  dataset_path: "streamvln.dataset.objectnav_action_dataset"
+  collate_fn: "objectnav_collate_fn"
+
+  # Training hyperparameters
+  batch_size: 8
+  learning_rate: 1e-4
+  num_epochs: 50
+  warmup_steps: 1000
+
+  # Loss configuration
+  loss_weights:
+    action_loss: 1.0
+    object_loss: 0.5
+    success_loss: 0.2
+
+# Habitat simulation configuration
+habitat:
+  environment:
+    max_episode_steps: 500
+    iterator_options:
+      max_scene_repeat_steps: 50000
+      shuffle: False
+
+  simulator:
+    agents:
+      main_agent:
+        sim_sensors:
+          rgb_sensor:
+            width: 640
+            height: 480
+            hfov: 79
+          depth_sensor:
+            width: 640
+            height: 480
+            hfov: 79
+            min_depth: 0.0
+            max_depth: 10.0
+    forward_step_size: 0.25
+    turn_angle: 15
+    habitat_sim_v0:
+      gpu_device_id: 0
+
+  task:
+    measurements:
+      distance_to_goal:
+        type: DistanceToGoal
+        distance_to: POINT
+      success:
+        type: Success
+        success_distance: 0.5  # ObjectNav需要更小的成功距离
+      spl:
+        type: SPL
+      object_success:
+        type: ObjectSuccess  # ObjectNav特定的成功指标
+        success_distance: 0.5
+        object_detection_threshold: 0.7
+      oracle_success:
+        type: OracleSuccess
+      oracle_navigation_error:
+        type: OracleNavigationError
+
+  dataset:
+    type: ObjectNav-v1
+    split: val_seen
+    scenes_dir: data/scene_datasets/
+    data_path: data/datasets/objectnav/{split}/{split}.json.gz
+
+# Evaluation configuration
+evaluation:
+  # ObjectNav specific metrics
+  metrics:
+    - success_rate
+    - spl
+    - success_weighted_by_path_length
+    - object_finding_rate
+    - time_to_success
+    - navigation_error
+
+  # Evaluation splits
+  eval_splits: ["val_seen", "val_unseen"]
+
+  # Evaluation parameters
+  num_eval_episodes: 1000
+  success_distance: 0.5
+  object_detection_threshold: 0.7
+
+# Logging configuration
+logging:
+  experiment_name: "objectnav_streamvln"
+  log_dir: "logs/objectnav"
+  wandb_project: "objectnav-streamvln"
+
+  # Logging frequency
+  log_every: 100
+  eval_every: 2000
+  save_every: 5000
