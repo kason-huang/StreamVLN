@@ -55,6 +55,7 @@ from llava.utils import rank0_print, process_video_with_pyav, process_video_with
 from streamvln.model.stream_video_vln import StreamVLNForCausalLM
 from streamvln.dataset.vln_action_dataset import collate_fn, VLNActionDataset
 from streamvln.dataset.mmc4_dataset import LazyMMC4Dataset
+from streamvln.dataset.objectnav_action_dataset import ObjNavActionDataset, objectnav_collate_fn
 
 from streamvln.utils.utils import ANSWER_LIST, DEFAULT_IMAGE_TOKEN, IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_MEMORY_TOKEN, MEMORY_TOKEN_INDEX, DEFAULT_VIDEO_TOKEN
 torch.multiprocessing.set_sharing_strategy("file_system")
@@ -915,6 +916,7 @@ class CombineDataset(Dataset):
         ##scanqa task id: 1
         ##vqa task id: 2
         ##vcap task id: 3
+        ##objectnav task id: 4
         res = []
         for dataset in self.datasets:
             if hasattr(dataset, "task"):
@@ -1434,32 +1436,65 @@ class DataCollatorForSupervisedDataset(object):
         
 
 
-def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,vision_tower, data_args) -> Dict:
+def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, vision_tower, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
-    
-    nav_dataset = VLNActionDataset(tokenizer=tokenizer, data_args=data_args, task_id=0)
-    dataset =[nav_dataset]
-    
+
+    dataset = []
+
+    # Support for VLN dataset (optional)
+    if data_args.video_folder is not None:
+        nav_dataset = VLNActionDataset(tokenizer=tokenizer, data_args=data_args, task_id=0)
+        dataset.append(nav_dataset)
+        rank0_print(f"Loaded VLN dataset from {data_args.video_folder}")
+    else:
+        rank0_print("VLN dataset not loaded (video_folder is None)")
+
+    # Support for Object Navigation dataset (optional)
+    if data_args.objnav_video_folder is not None:
+        objnav_data_args = copy.deepcopy(data_args)
+        objnav_data_args.video_folder = data_args.objnav_video_folder
+        objnav_dataset = ObjNavActionDataset(tokenizer=tokenizer, data_args=objnav_data_args, task_id=4)
+        dataset.append(objnav_dataset)
+        rank0_print(f"Loaded ObjectNav dataset from {data_args.objnav_video_folder}")
+    else:
+        rank0_print("ObjectNav dataset not loaded (objnav_video_folder is None)")
+
     if data_args.multi_task_training:
-        QA_data_agrs = copy.deepcopy(data_args)
-        QA_data_agrs.video_folder = data_args.qa_video_folder
-        QA_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=QA_data_agrs.data_path, datasets="QA_datasets", data_args=QA_data_agrs, task_id=1)
-        
-        SCANQA_data_agrs = copy.deepcopy(data_args)
-        SCANQA_data_agrs.video_folder = data_args.scanqa_video_folder
-        SCANQA_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=SCANQA_data_agrs.data_path, datasets="SCANQA_datasets", data_args=SCANQA_data_agrs, task_id=2)
-        
+        QA_data_args = copy.deepcopy(data_args)
+        QA_data_args.video_folder = data_args.qa_video_folder
+        QA_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=QA_data_args.data_path, datasets="QA_datasets", data_args=QA_data_args, task_id=1)
+
+        SCANQA_data_args = copy.deepcopy(data_args)
+        SCANQA_data_args.video_folder = data_args.scanqa_video_folder
+        SCANQA_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=SCANQA_data_args.data_path, datasets="SCANQA_datasets", data_args=SCANQA_data_args, task_id=2)
+
         MMC4_dataset = LazyMMC4Dataset(tokenizer=tokenizer, data_path=data_args.data_path, datasets="MMC4_datasets", data_args=data_args, task_id=3)
-        
+
         dataset = dataset + [QA_dataset] + [SCANQA_dataset] + [MMC4_dataset]
+
+    # Check if any dataset is loaded
+    if len(dataset) == 0:
+        raise ValueError("No dataset loaded! Please provide at least one of: video_folder, objnav_video_folder, or enable multi_task_training")
+
     if len(dataset) > 1:
         train_dataset = CombineDataset(dataset)
+        rank0_print("Using CombineDataset for multiple datasets")
     else:
         train_dataset = dataset[0]
-        
+        rank0_print("Using single dataset for training")
+
     rank0_print('len train_dataset ', len(train_dataset))
 
-    data_collator = partial(collate_fn, tokenizer=tokenizer)
+    # Determine collate function based on dataset composition
+    if len(dataset) == 1 and hasattr(dataset[0], 'task') and dataset[0].task == 4:
+        # Pure ObjectNav training
+        data_collator = partial(objectnav_collate_fn, tokenizer=tokenizer)
+        rank0_print("Using ObjectNav collate function")
+    else:
+        # Mixed dataset training (VLN + ObjectNav + others) or pure VLN
+        data_collator = partial(collate_fn, tokenizer=tokenizer)
+        rank0_print("Using VLN collate function")
+
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
