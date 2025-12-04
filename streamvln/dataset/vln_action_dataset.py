@@ -713,7 +713,7 @@ class VLNActionDataset(Dataset):
     def prepare_conversation(self, conversation, actions): 
         i = 0
         sources = []
-        t = 0
+
         while i < len(actions):
             source = copy.deepcopy(conversation)
             prompt = random.choice(self.conjunctions) + DEFAULT_IMAGE_TOKEN
@@ -726,7 +726,6 @@ class VLNActionDataset(Dataset):
             
             source[1]["value"] = answer
             i += len(step_actions)
-            t += 1
             sources.extend(source)
         return sources
     
