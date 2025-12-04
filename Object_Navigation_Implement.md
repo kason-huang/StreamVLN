@@ -137,9 +137,27 @@ def generate_objectnav_instructions(self, object_category):
 ```python
 def create_objectnav_conversations(self):
     """创建ObjectNav特定的对话模板"""
-    prompt = "You are an object finding assistant. Navigate to the specified <goal_object>. Devise an action sequence using the four actions: TURN LEFT (←) or TURN RIGHT (→) by 15 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
+    prompt = "You are an object finding assistant. Your task is to <instruction>. Devise an action sequence using the four actions: TURN LEFT (←) or TURN RIGHT (→) by 15 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
     answer = ""
     return [{"from": "human", "value": prompt}, {"from": "gpt", "value": answer}]
+```
+
+#### 3.2.5 对话准备和指令替换
+```python
+def prepare_objectnav_conversation(self, conversation, instruction, actions):
+    """准备ObjectNav特定的对话格式"""
+    # 模仿VLN的模式，使用<instruction>占位符
+    # 在__getitem__中用生成的多样化指令替换<instruction>
+
+def __getitem__(self, i):
+    # 从预生成的指令中选择一个，或动态生成
+    instructions = data.get("instructions", [])
+    if not instructions:
+        object_category = data.get('object_category', 'object')
+        instructions = self.generate_objectnav_instructions(object_category)
+
+    instruction = instructions[ins_id % len(instructions)]
+    interleave_sources = self.prepare_objectnav_conversation(sources, instruction, list(actions))
 ```
 
 ### 3.3 与VLN的关系

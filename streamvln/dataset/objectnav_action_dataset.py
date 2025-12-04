@@ -248,7 +248,7 @@ class ObjNavActionDataset(Dataset):
 
     def create_objectnav_conversations(self):
         """创建ObjectNav特定的对话模板"""
-        prompt = "You are an object finding assistant. Navigate to the specified <goal_object>. Devise an action sequence using the four actions: TURN LEFT (←) or TURN RIGHT (→) by 15 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
+        prompt = "You are an object finding assistant. Your task is to <instruction>. Devise an action sequence using the four actions: TURN LEFT (←) or TURN RIGHT (→) by 15 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
         answer = ""
         return [{"from": "human", "value": prompt}, {"from": "gpt", "value": answer}]
 
@@ -387,7 +387,7 @@ class ObjNavActionDataset(Dataset):
 
         return ''.join(converted_sequence)
 
-    def prepare_objectnav_conversation(self, conversation, goal_object, actions):
+    def prepare_objectnav_conversation(self, conversation, instruction, actions):
         """准备ObjectNav特定的对话格式"""
         i = 0
         sources = []
@@ -399,8 +399,8 @@ class ObjNavActionDataset(Dataset):
             answer = self.actions2text(step_actions)
 
             if i == 0:
-                # 第一轮对话，包含目标物体
-                source[0]["value"] = source[0]["value"].replace("<goal_object>", goal_object)
+                # 第一轮对话，替换<instruction>占位符
+                source[0]["value"] = source[0]["value"].replace("<instruction>.", instruction)
                 source[0]["value"] += f" {prompt}."
             else:
                 source[0]["value"] = f"{prompt}."
@@ -485,13 +485,16 @@ class ObjNavActionDataset(Dataset):
 
         # 准备对话
         sources = copy.deepcopy(self.conversations)
-        goal_object = data.get('object_category', 'object')
+
+        # 从生成的指令中选择一个（模仿VLN的模式）
+        instructions = data.get("instructions", [])
+        instruction = instructions[ins_id % len(instructions)]  # 使用对应的指令
 
         if start_idx != 0:
             sources[0]["value"] += f' These are your historical observations: {DEFAULT_MEMORY_TOKEN}.'
 
         # 生成ObjectNav特定的对话
-        interleave_sources = self.prepare_objectnav_conversation(sources, goal_object, list(actions))
+        interleave_sources = self.prepare_objectnav_conversation(sources, instruction, list(actions))
 
         # 预处理文本
         try:
