@@ -10,6 +10,7 @@ import random
 import argparse
 import itertools
 import quaternion
+from transformers import BitsAndBytesConfig
 import transformers
 import numpy as np
 
@@ -190,6 +191,7 @@ class VLNEvaluator:
         return env
 
     def eval_action(self, idx) -> None:
+        # 初始化和环境配置模块
         env = self.config_env()
         scene_episode_dict = {}
         for episode in env.episodes:
@@ -197,9 +199,13 @@ class VLNEvaluator:
                 scene_episode_dict[episode.scene_id] = []
             scene_episode_dict[episode.scene_id].append(episode)
 
+        # 获取相机内参矩阵
         intrinsic_matrix = self.get_intrinsic_matrix(self.config.habitat.simulator.agents.main_agent.sim_sensors.rgb_sensor)
+        # 初始化性能指标列表（success rate, spl, oracle_success, navigation error）
         sucs, spls, oss, ones = [], [], [], []
+        # 已处理列表
         done_res = []
+        # 断点续传模块
         if os.path.exists(os.path.join(self.output_path, f'result.json')):
             with open(os.path.join(self.output_path, f'result.json'),'r') as f:
                 for line in f.readlines():
@@ -210,6 +216,8 @@ class VLNEvaluator:
                         spls.append(res['spl'])
                         oss.append(res['os'])
                         ones.append(res['ne'])
+        
+        # 场景循环处理
         for scene in sorted(scene_episode_dict.keys()):
             episodes = scene_episode_dict[scene]
             scene_id = scene.split('/')[-2]
@@ -222,6 +230,8 @@ class VLNEvaluator:
                 episode_id = episode.episode_id
                 if [scene_id, episode_id, episode_instruction] in done_res:
                     continue
+
+                # episode初始化
                 self.model.reset_for_env(idx)
                 env.current_episode = episode
                 observations = env.reset()
@@ -244,6 +254,8 @@ class VLNEvaluator:
                 action_seq = []
                 past_key_values = None
                 output_ids = None
+
+                # 导航主循环模块
                 while not env.episode_over:
                     self.model.eval()
                     time_ids.append(step_id)
@@ -255,6 +267,7 @@ class VLNEvaluator:
                     depth = depth * (self._max_depth - self._min_depth) + self._min_depth
                     depth = depth * 1000
 
+                    # 计算相机位置和变换矩阵
                     agent_state = env.sim.get_agent_state()
                     height = agent_state.position[1] - initial_height # Habitat GPS makes west negative, so flip y
                     camera_position = np.array([x, -y, self._camera_height + height])
@@ -282,12 +295,16 @@ class VLNEvaluator:
                     pose_list.append(torch.from_numpy(tf_camera_to_episodic) @ self.get_axis_align_matrix())
                     intrinsic_list.append(intrinsic)
                     
+                    # 生成俯视图可视化帧,就是那个左边observation，右边地图缩略图还有一个agent的那个图
                     info = env.get_metrics()
                     if info['top_down_map'] is not None:
                         frame = observations_to_image({'rgb':observations['rgb']}, info)
                         vis_frames.append(frame)
+
+                    # 模型推理模块
                     # import ipdb; ipdb.set_trace()
                     if len(action_seq) == 0:
+                        # 构建对话prompt，包括导航指令
                         if output_ids is None:
                             sources = copy.deepcopy(self.conversation)
                             sources[0]["value"] = sources[0]["value"].replace(' Where should you go next to stay on track?', f' Please devise an action sequence to follow the instruction which may include turning left or right by a certain degree, moving forward by a certain distance or stopping once the task is complete.')
@@ -305,6 +322,7 @@ class VLNEvaluator:
                         if output_ids is not None:
                             input_ids = torch.cat([output_ids,input_ids.to(output_ids.device)], dim=1)
 
+                        # 处理历史记忆token，准备输入数据（图像、深度、位姿、内参）
                         images = rgb_list[-1:]
                         depths = depth_list[-1:]
                         poses = pose_list[-1:]
@@ -319,7 +337,8 @@ class VLNEvaluator:
                             depths = depth_list[history_ids] + depths
                             poses = pose_list[history_ids] + poses
                             intrinsics = intrinsic_list[history_ids] + intrinsics
-                                
+
+                        # 输入字典        
                         input_dict = {'images':torch.stack(images).unsqueeze(0), 'depths':torch.stack(depths).unsqueeze(0), \
                                         'poses':torch.stack(poses).unsqueeze(0), 'intrinsics':torch.stack(intrinsics).unsqueeze(0), 'inputs':input_ids, 'env_id':idx, 'time_ids':[time_ids],'task_type':[0]}
                             
@@ -327,10 +346,13 @@ class VLNEvaluator:
                         
                         for key, value in input_dict.items():
                             if key in ['images', 'depths', 'poses', 'intrinsics']:
-                                input_dict[key] = input_dict[key].to(torch.bfloat16)
+                                input_dict[key] = input_dict[key].to(torch.float16)
                         
-                        outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
-                        
+                        #outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+                        # 调用模型生成动作序列
+                        outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=256, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+
+                        # 解析LLM输出位具体动作
                         output_ids = outputs.sequences
                         past_key_values = outputs.past_key_values
                         llm_outputs = self.tokenizer.batch_decode(output_ids, skip_special_tokens=False)[0].strip()
@@ -366,14 +388,17 @@ class VLNEvaluator:
                                 f.write(' '.join(str(a) for a in action_seq_original))
                     action = action_seq.pop(0)
                     
+                    # 执行动作并获取新观测
                     observations = env.step(action)
                     step_id += 1
+                    # 定期重置模型状态
                     if step_id % self.num_frames == 0:
                         self.model.reset_for_env(idx)
                         output_ids = None
                         past_key_values = None
                         time_ids = []
-                        
+                
+                # episode结束处理模块
                 process_bar.update(1)
                 # episode_id += 1
                 metrics = env.get_metrics()
@@ -511,6 +536,84 @@ def pad_tensors(tensors, lens=None, max_len=None, pad=0):
         output.data[i, :l, ...] = t.data
     return output
    
+def detect_best_attention_implementation():
+    """
+    Automatically detect the best available attention implementation with runtime compatibility checks.
+    
+    Returns:
+        str: Best available attention implementation ('flash_attention_2', 'sdpa', or 'eager')
+    
+    Priority order:
+    1. flash_attention_2 (best performance, requires Ampere GPU or newer)
+    2. sdpa (good performance, PyTorch 2.0+, with runtime validation)
+    3. eager (fallback, highest memory usage)
+    """
+    
+    # Check if current GPU supports FlashAttention (Ampere or newer)
+    def _is_ampere_or_newer():
+        if not torch.cuda.is_available():
+            return False
+        major, _ = torch.cuda.get_device_capability()
+        return major >= 8
+    
+    # Try Flash Attention 2 with runtime compatibility check
+    try:
+        import flash_attn
+        
+        if hasattr(flash_attn, 'flash_attn_func') and _is_ampere_or_newer():
+            # Test with small tensors
+            if torch.cuda.is_available():
+                device = torch.cuda.current_device()
+                q = torch.randn(1, 32, 64, device=f'cuda:{device}', dtype=torch.float16)
+                k = torch.randn(1, 32, 64, device=f'cuda:{device}', dtype=torch.float16)
+                v = torch.randn(1, 32, 64, device=f'cuda:{device}', dtype=torch.float16)
+                
+                flash_attn.flash_attn_func(q, k, v)
+                print("✓ Flash Attention 2 available and compatible")
+                return 'flash_attention_2'
+                
+    except (ImportError, RuntimeError) as e:
+        if "FlashAttention only supports Ampere GPUs" in str(e):
+            capability = torch.cuda.get_device_capability() if torch.cuda.is_available() else None
+            if capability:
+                major, minor = capability
+                print(f"⚠ GPU compute capability {major}.{minor} incompatible with FlashAttention (requires >= 8.0)")
+        else:
+            print(f"✗ Flash Attention unavailable: {type(e).__name__}")
+    
+    # Check PyTorch SDPA with runtime test and configure backends only when using SDPA
+    if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+        try:
+            # Configure SDPA backends to avoid cutlass issues
+            torch.backends.cuda.enable_flash_sdp(True)
+            torch.backends.cuda.enable_math_sdp(True)
+            torch.backends.cuda.enable_mem_efficient_sdp(False)  # Disable cutlass
+            
+            # Test SDPA with small tensors
+            if torch.cuda.is_available():
+                device = torch.cuda.current_device()
+                batch_size, num_heads, seq_len, head_dim = 1, 8, 32, 64
+                
+                q = torch.randn(batch_size, num_heads, seq_len, head_dim, device=f'cuda:{device}', dtype=torch.float16)
+                k = torch.randn(batch_size, num_heads, seq_len, head_dim, device=f'cuda:{device}', dtype=torch.float16)
+                v = torch.randn(batch_size, num_heads, seq_len, head_dim, device=f'cuda:{device}', dtype=torch.float16)
+                
+                torch.nn.functional.scaled_dot_product_attention(q, k, v)
+                print("✓ PyTorch SDPA available and compatible (cutlass disabled)")
+                return 'sdpa'
+                
+        except RuntimeError as e:
+            if "cutlassF" in str(e) or "no kernel found" in str(e):
+                print(f"✗ SDPA cutlass kernel error: {e}")
+            else:
+                print(f"✗ SDPA runtime error: {e}")
+        except Exception as e:
+            print(f"✗ SDPA configuration failed: {e}")
+    
+    # Final fallback
+    print("⚠ Using eager attention (may be slower)")
+    return 'eager'
+
 def eval():
     global local_rank
     parser = argparse.ArgumentParser()
@@ -536,6 +639,10 @@ def eval():
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
+    parser.add_argument('--vision_tower_path', type=str, default=None,
+            help='Path to vision tower model (e.g., checkpoints/google/siglip-so400m-patch14-384)')
+    parser.add_argument("--quantization_bits", type=int,
+            help="Quantization bits. 4 for 4-bit, 8 for 8-bit.", default=-1)
     
     args = parser.parse_args()
     init_distributed_mode(args)
@@ -545,17 +652,36 @@ def eval():
                                                         model_max_length=args.model_max_length,
                                                         padding_side="right")
     
+    num_gpus = torch.cuda.device_count()
+    max_memory = {i: "14GiB" for i in range(num_gpus)}  # 用整型键
+    max_memory["cpu"] = "64GiB"  # 或者用 "disk": "64GiB" 做磁盘offload
+    qconf = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+    )
+
+    attn_implementation = detect_best_attention_implementation()
+
     config = transformers.AutoConfig.from_pretrained(args.model_path)
     model = StreamVLNForCausalLM.from_pretrained(
                 args.model_path,
-                attn_implementation="flash_attention_2",
-                torch_dtype=torch.bfloat16,
+                attn_implementation=attn_implementation,
+                torch_dtype=torch.float16,
                 config=config,
-                low_cpu_mem_usage=False,
+                low_cpu_mem_usage=True,
+                device_map="auto",
+                quantization_config=qconf,
+                max_memory=max_memory,
+                offload_folder="offload",
+                offload_buffers=True,
+                offload_state=True,
+                offload_optimizer=True,
                 )
     model.model.num_history = args.num_history
     model.requires_grad_(False)
-    model.to(local_rank)
+    # model.to(local_rank)
     evaluate(model, tokenizer, args)
 
 
