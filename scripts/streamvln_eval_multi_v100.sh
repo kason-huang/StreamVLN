@@ -1,5 +1,5 @@
 export MAGNUM_LOG=quiet HABITAT_SIM_LOG=quiet
-export HF_HUB_OFFLINE=1
+export HF_HUB_OFFLINE=0
 export VISION_MODEL_VERSION="checkpoints/google/siglip-so400m-patch14-384"
 MASTER_PORT=$((RANDOM % 101 + 20000))
 
@@ -7,7 +7,7 @@ MASTER_PORT=$((RANDOM % 101 + 20000))
 CHECKPOINT="self_checkpoints/StreamVLN_Video_qwen_1_5_1epoch_196token_8history_32frame"
 echo "CHECKPOINT: ${CHECKPOINT}"
 
-torchrun --nproc_per_node=2 \
+time torchrun --nproc_per_node=2 \
     --master_port=$MASTER_PORT \
     streamvln/streamvln_eval_v100.py \
     --model_path $CHECKPOINT \
