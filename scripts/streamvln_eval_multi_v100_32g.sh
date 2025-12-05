@@ -1,5 +1,5 @@
 export MAGNUM_LOG=quiet HABITAT_SIM_LOG=quiet
-export HF_HUB_OFFLINE=1
+export HF_HUB_OFFLINE=0
 export VISION_MODEL_VERSION="checkpoints/google/siglip-so400m-patch14-384"
 MASTER_PORT=$((RANDOM % 101 + 20000))
 
