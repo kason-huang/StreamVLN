@@ -327,7 +327,7 @@ class VLNEvaluator:
                         
                         for key, value in input_dict.items():
                             if key in ['images', 'depths', 'poses', 'intrinsics']:
-                                input_dict[key] = input_dict[key].to(torch.bfloat16)
+                                input_dict[key] = input_dict[key].to(torch.float16)
                         
                         outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
                         
@@ -364,6 +364,7 @@ class VLNEvaluator:
                             # named as f"{scene_id}_{episode_id}_action_seq.txt"
                             with open(os.path.join(self.output_path, f'check_sim_{self.epoch}', f'{scene_id}_{episode_id}.txt'), 'w') as f:
                                 f.write(' '.join(str(a) for a in action_seq_original))
+                        
                     action = action_seq.pop(0)
                     
                     observations = env.step(action)
@@ -548,8 +549,8 @@ def eval():
     config = transformers.AutoConfig.from_pretrained(args.model_path)
     model = StreamVLNForCausalLM.from_pretrained(
                 args.model_path,
-                attn_implementation="flash_attention_2",
-                torch_dtype=torch.bfloat16,
+                attn_implementation="sdpa",
+                torch_dtype=torch.float16,
                 config=config,
                 low_cpu_mem_usage=False,
                 )

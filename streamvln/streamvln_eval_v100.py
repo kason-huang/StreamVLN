@@ -361,6 +361,31 @@ class VLNEvaluator:
                         print('actions', action_seq, flush=True)
                         if len(action_seq) == 0: ## if generated llm without Specific values
                             action_seq = [0]
+                        
+                        # 下面都是输出的fix
+                        if len(action_seq) < 4 and 0 not in action_seq:
+                            action_seq_original = action_seq
+                            print(f"action_seq is too short: {len(action_seq)}, fill with 2, 3", flush=True)
+                            with open(os.path.join(self.output_path, f'check_sim_{self.epoch}', f'{scene_id}_{episode_id}.txt'), 'w') as f:
+                                f.write(' '.join(str(a) for a in action_seq_original))
+                            if len(action_seq) == 0:
+                                action_seq = [2, 3, 2, 3]  
+                            elif len(action_seq) == 1:
+                                action_seq += [2, 2, 3]     
+                            elif len(action_seq) == 2:
+                                action_seq += [2, 3]       
+                            elif len(action_seq) == 3:
+                                action_seq += [2]
+                        
+                        if len(action_seq) > 4:
+                            print(f"action_seq is too long: {len(action_seq)}, truncate to 4", flush=True)
+                            action_seq_original = action_seq
+                            action_seq = action_seq[:4]
+                            # export and save the "scene id" into the self.output_path as a txt
+                            # os.path.join(self.output_path, f'check_sim_{self.epoch}' save in this directory
+                            # named as f"{scene_id}_{episode_id}_action_seq.txt"
+                            with open(os.path.join(self.output_path, f'check_sim_{self.epoch}', f'{scene_id}_{episode_id}.txt'), 'w') as f:
+                                f.write(' '.join(str(a) for a in action_seq_original))
                     action = action_seq.pop(0)
                     
                     # 执行动作并获取新观测
