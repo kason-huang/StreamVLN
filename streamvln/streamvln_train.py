@@ -1583,6 +1583,7 @@ def get_model(model_args, training_args, data_args, bnb_model_from_pretrained_ar
 
 def train(attn_implementation=None):
     global local_rank
+    # torch.autograd.set_detect_anomaly(True)
     
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()

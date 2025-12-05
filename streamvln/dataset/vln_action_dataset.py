@@ -730,6 +730,9 @@ class VLNActionDataset(Dataset):
         return sources
     
     def __getitem__(self, i):
+        # if i == 252:
+            # print(f"=== Processing sample {i} - DEBUG START ===")
+        
         ep_id, ins_id, start_idx, valid_idx = self.data_list[i]
         data = self.nav_data[ep_id]
         video_path = data['video']
@@ -776,6 +779,7 @@ class VLNActionDataset(Dataset):
         
         data_dict = preprocess([interleave_sources], self.tokenizer, True)
 
+        # print("vln_action_dataset: episode_id", data['id'])
         return data_dict["input_ids"][0], \
             data_dict["labels"][0], \
             images, \

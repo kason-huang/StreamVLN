@@ -8,11 +8,9 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-tmp
 
 # 项目特定目录
 results/
-checkpoints/
 hf_cache/
 # 日志文件
 *.log
@@ -38,7 +36,7 @@ Thumbs.db
 .dockerignore
 
 # 数据文件
-./data/
+data/
 *.h5
 *.hdf5
 *.pickle
@@ -52,14 +50,7 @@ Thumbs.db
 *.ckpt
 
 
-data_old
-habitat-lab
-./data/
-/self_checkpoints
-/checkpoints/
-/data
-/habitat-lab
-__pycache__/
-/results/
-/wandb/
-
+./data_old/
+./habitat-lab/
+./data
+./checkpoints

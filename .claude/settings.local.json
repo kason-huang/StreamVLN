@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//root/miniconda3/envs/streamvln/lib/python3.9/site-packages/transformers/**)",
+      "Bash(tree:*)",
+      "Read(//mnt/sfs_turbo/data-platform/streamvln_data/datasets/**)",
+      "Read(//mnt/sfs_turbo/data-platform/streamvln_data/trajectory_data/**)",
+      "Bash(zcat:*)",
+      "Bash(cat:*)",
+      "Bash(tar:*)",
+      "Read(//mnt/sfs_turbo/data-platform/streamvln_data/co-training_data/ScanNet/**)",
+      "Bash(python3:*)",
+      "Read(//mnt/sfs_turbo/data-platform/streamvln_data/co-training_data/MMC4-core/**)",
+      "Bash(find:*)",
+      "Bash(awk:*)",
+      "Bash(for:*)",
+      "Bash(do ls:*)",
+      "Bash(done)",
+      "Bash(wc:*)",
+      "Bash(python:*)",
+      "Bash(chmod:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

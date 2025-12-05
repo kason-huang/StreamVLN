@@ -310,6 +310,8 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         modalities: Optional[List[str]] = ["image"],
         **kwargs
     ) -> Union[Tuple, CausalLMOutputWithPast]:
+
+
         tokenizer = kwargs.get("tokenizer", None)
         input_ids_ = input_ids
         time_ids = kwargs.get("time_ids", None)
@@ -336,7 +338,8 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
                 time_ids,
                 task_ids
             )
-    
+
+        # print(attention_mask.size())
         return super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,

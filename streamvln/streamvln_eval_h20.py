@@ -325,9 +325,10 @@ class VLNEvaluator:
                             
                         input_dict = dict_to_cuda(input_dict, self.device)
                         
-                        for key, value in input_dict.items():
-                            if key in ['images', 'depths', 'poses', 'intrinsics']:
-                                input_dict[key] = input_dict[key].to(torch.bfloat16)
+                        # for key, value in input_dict.items():
+                        #     if key in ['images', 'depths', 'poses', 'intrinsics']:
+                        #         #input_dict[key] = input_dict[key].to(torch.bfloat16)
+                        #         input_dict[key] = input_dict[key].to(torch.float16)
                         
                         outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
                         
@@ -339,31 +340,6 @@ class VLNEvaluator:
                         print('actions', action_seq, flush=True)
                         if len(action_seq) == 0: ## if generated llm without Specific values
                             action_seq = [0]
-                        
-                        # 下面都是输出的fix
-                        if len(action_seq) < 4 and 0 not in action_seq:
-                            action_seq_original = action_seq
-                            print(f"action_seq is too short: {len(action_seq)}, fill with 2, 3", flush=True)
-                            with open(os.path.join(self.output_path, f'check_sim_{self.epoch}', f'{scene_id}_{episode_id}.txt'), 'w') as f:
-                                f.write(' '.join(str(a) for a in action_seq_original))
-                            if len(action_seq) == 0:
-                                action_seq = [2, 3, 2, 3]  
-                            elif len(action_seq) == 1:
-                                action_seq += [2, 2, 3]     
-                            elif len(action_seq) == 2:
-                                action_seq += [2, 3]       
-                            elif len(action_seq) == 3:
-                                action_seq += [2]
-                        
-                        if len(action_seq) > 4:
-                            print(f"action_seq is too long: {len(action_seq)}, truncate to 4", flush=True)
-                            action_seq_original = action_seq
-                            action_seq = action_seq[:4]
-                            # export and save the "scene id" into the self.output_path as a txt
-                            # os.path.join(self.output_path, f'check_sim_{self.epoch}' save in this directory
-                            # named as f"{scene_id}_{episode_id}_action_seq.txt"
-                            with open(os.path.join(self.output_path, f'check_sim_{self.epoch}', f'{scene_id}_{episode_id}.txt'), 'w') as f:
-                                f.write(' '.join(str(a) for a in action_seq_original))
                     action = action_seq.pop(0)
                     
                     observations = env.step(action)
@@ -534,8 +510,8 @@ def eval():
                         help='gpu')
     parser.add_argument('--port', default='1111')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
-    parser.add_argument('--vision_tower_path', type=str, default=None,
-            help='Path to vision tower model (e.g., checkpoints/google/siglip-so400m-patch14-384)')
+    # parser.add_argument('--vision_tower_path', type=str, default=None,
+    #         help='Path to vision tower model (e.g., checkpoints/google/siglip-so400m-patch14-384)')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     
@@ -550,8 +526,10 @@ def eval():
     config = transformers.AutoConfig.from_pretrained(args.model_path)
     model = StreamVLNForCausalLM.from_pretrained(
                 args.model_path,
-                attn_implementation="flash_attention_2",
-                torch_dtype=torch.bfloat16,
+                #attn_implementation="flash_attention_2",
+                attn_implementation="sdpa",
+                #torch_dtype=torch.bfloat16,
+                # torch_dtype=torch.float16,
                 config=config,
                 low_cpu_mem_usage=False,
                 )
