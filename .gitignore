@@ -19,3 +19,6 @@ debug_*
 *_debug.png
 *_debug.jpg
 *_debug.jpeg
+/habitat-lab
+/self_checkpoints
+/tmp
