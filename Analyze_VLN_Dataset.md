@@ -162,6 +162,201 @@ def prepare_conversation(self, conversation, actions):
 - 使用随机连词增加语言多样性
 - 将导航任务转化为对话形式
 
+### 多轮对话构建流程详解
+
+VLNActionDataset通过**滑动窗口策略**将一个episode的完整导航轨迹分割为多个训练样本，每个样本生成多轮对话。这是StreamVLN实现**流式交互导航**的核心机制。
+
+#### 样本分割逻辑解析
+
+```python
+# 第657-661行：样本分割逻辑
+num_rounds = (actions_len - valid_idx) // self.num_frames
+for n in range(num_rounds + 1):
+    if n * self.num_frames == actions_len - valid_idx:
+        continue
+    self.data_list.append((ep_id, ins_id, n * self.num_frames, valid_idx))
+```
+
+**关键理解**：
+- 每个episode被分割成`num_rounds + 1`个样本
+- 第一个样本：`start_idx = 0`，无历史信息
+- 后续样本：`start_idx > 0`，包含历史信息
+
+#### 完整的多样本对话构建示例
+
+假设一个导航episode：
+- 配置：`num_frames=32`, `num_future_steps=4`, `num_history=8`
+- 完整动作序列：`[1,1,3,1,2,1,1,1,1,2,3,2,1,1,1,1,2,2,1,1,0]` (共20个动作)
+- 有效起始：`valid_idx=0`（无初始旋转）
+- 指令："Go to the kitchen and stop near the table"
+
+##### 第一个样本 (Sample 0)
+```python
+# data_list中的第一个条目
+(ep_id, ins_id, start_idx, valid_idx) = (episode_0, instruction_0, 0, 0)
+
+# 当前处理的时间窗口
+time_ids = np.arange(0, min(0 + 32, 20)) = [0, 1, 2, ..., 19]
+current_actions = actions[0:20] = [1,1,3,1,2,1,1,1,1,2,3,2,1,1,1,1,2,2,1,1,0]
+
+# 历史帧处理：start_idx=0，所以无历史帧
+history_frames = []
+
+# 对话构建：无历史观测信息
+sources[0]["value"] = "<video>\nYou are an autonomous navigation assistant. Your task is to Go to the kitchen and stop near the table. Devise an action sequence..."
+
+# 生成多轮对话（5轮，每轮4个动作）
+conversation_sample_0 = [
+    {"from": "human", "value": "... instruction ... in front of you is <image>."},
+    {"from": "gpt", "value": "↑→↑↑"},      # actions[0:4]
+    {"from": "human", "value": "you can see <image>."},
+    {"from": "gpt", "value": "←↑↑↑"},      # actions[4:8]
+    {"from": "human", "value": "there is <image>."},
+    {"from": "gpt", "value": "↑↑↑↑"},      # actions[8:12]
+    {"from": "human", "value": "you can spot <image>."},
+    {"from": "gpt", "value": "→←↑↑"},      # actions[12:16]
+    {"from": "human", "value": "ahead of you is <image>."},
+    {"from": "gpt", "value": "↑↑STOP"}     # actions[16:20]
+]
+```
+
+##### 第二个样本 (Sample 1)
+```python
+# data_list中的第二个条目
+(ep_id, ins_id, start_idx, valid_idx) = (episode_0, instruction_0, 32, 0)
+
+# 但actions_len=20 < start_idx + num_frames=32，所以只处理到结束
+time_ids = np.arange(32, min(32 + 32, 20)) = []  # 空数组
+# 实际上这个样本会被跳过，因为没有剩余动作
+```
+
+##### 实际的多样本示例（长轨迹）
+
+假设一个长轨迹有100个动作，`num_frames=32`：
+
+**Sample 0** (start_idx=0, 无历史信息):
+```python
+time_ids = [0, 1, 2, ..., 31]
+history_frames = []
+conversation_0 = [
+    {"from": "human", "value": "... instruction ... in front of you is <image>."},
+    {"from": "gpt", "value": "↑→↑↑"},      # actions[0:4]
+    # ... 共8轮对话，处理actions[0:32]
+]
+```
+
+**Sample 1** (start_idx=32, 包含历史信息):
+```python
+time_ids = [32, 33, 34, ..., 63]
+current_actions = actions[32:64]
+
+# 历史帧采样：从0到31，均匀采样8个
+history_step_ids = np.arange(0, 32, max(32//8, 1)) = [0, 4, 8, 12, 16, 20, 24, 28]
+history_frames = [frame_0, frame_4, frame_8, frame_12, frame_16, frame_20, frame_24, frame_28]
+
+# 对话构建：包含历史观测
+sources[0]["value"] += ' These are your historical observations: <memory>.'
+conversation_1 = [
+    {"from": "human", "value": "... instruction ... historical observations: <memory>. in front of you is <image>."},
+    {"from": "gpt", "value": "↑→↑←"},      # actions[32:36]
+    {"from": "human", "value": "you can see <image>."},
+    {"from": "gpt", "value": "↑↑↑→"},      # actions[36:40]
+    # ... 共8轮对话，处理actions[32:64]
+]
+```
+
+**Sample 2** (start_idx=64, 包含更多历史信息):
+```python
+time_ids = [64, 65, 66, ..., 95]
+current_actions = actions[64:96]
+
+# 历史帧采样：从0到63，间隔更大
+history_step_ids = np.arange(0, 64, max(64//8, 1)) = [0, 8, 16, 24, 32, 40, 48, 56]
+history_frames = [frame_0, frame_8, frame_16, frame_24, frame_32, frame_40, frame_48, frame_56]
+
+# 对话构建：包含更长时期的历史观测
+sources[0]["value"] += ' These are your historical observations: <memory>.'
+conversation_2 = [
+    {"from": "human", "value": "... instruction ... historical observations: <memory>. in front of you is <image>."},
+    {"from": "gpt", "value": "←↑↑↑"},      # actions[64:68]
+    # ... 共8轮对话，处理actions[64:96]
+]
+```
+
+#### 关键设计特点
+
+1. **渐进式历史信息**:
+   - 第一个样本：无历史信息，从头开始导航
+   - 后续样本：包含从起点到当前样本的历史信息
+   - 历史采样间隔随样本编号增大
+
+2. **对话结构一致性**:
+   - 每个样本内都使用相同的多轮对话模式
+   - 第一轮总是包含完整指令和当前观察
+   - 后续轮次为简洁的观察-动作对
+
+3. **流式学习支持**:
+   - 模拟真实导航中的连续决策过程
+   - 模型学会利用历史信息进行后续决策
+
+4. **样本间的时间连续性**:
+   - Sample N的结束状态是Sample N+1的初始状态
+   - 确保训练数据的连续性和一致性
+
+#### Tokenization中的多模态对齐
+
+对于包含历史信息的样本，tokenization会包含：
+
+```python
+# Sample 1的token序列示例
+[
+    "<|im_start|>user",
+    "<video>",
+    "You",
+    "are",
+    "an",
+    "autonomous",
+    "...",
+    "Go",
+    "to",
+    "the",
+    "kitchen",
+    "...",
+    IMAGE_TOKEN_INDEX,           # 当前观察图像
+    "These",
+    "are",
+    "your",
+    "historical",
+    "observations:",
+    MEMORY_TOKEN_INDEX,           # 历史观测记忆
+    "<|im_end|>",
+    "<|im_start|>assistant",
+    "↑→↑←",
+    "<|im_end|>",
+
+    # 对应的图像张量：
+    # images[0:8]   = 历史帧 [frame_0, frame_4, frame_8, frame_12, frame_16, frame_20, frame_24, frame_28]
+    # images[8]    = 当前观察帧 (对应第一个IMAGE_TOKEN_INDEX)
+    # images[9]    = 下一个观察帧 (对应下一个对话轮次)
+]
+```
+
+#### 训练策略优势
+
+1. **多样性学习**：
+   - 模型同时学习无历史和有历史的导航场景
+   - 适应不同阶段的决策需求
+
+2. **上下文利用**：
+   - 后续样本能够利用完整的历史轨迹信息
+   - 学习长期依赖和记忆管理
+
+3. **现实性模拟**：
+   - 第一轮对话模拟刚开始导航的场景
+   - 后续对话模拟中途接手导航任务
+
+这种样本分割和对话构建机制完美体现了StreamVLN的**流式交互**理念：在保持任务连续性的同时，实现高效的训练和推理。
+
 ## 4. 多模态数据处理流程 (第733-784行)
 
 ### `__getitem__` 方法核心逻辑
@@ -192,6 +387,121 @@ def prepare_conversation(self, conversation, actions):
    else:
        history_frames = []
    ```
+
+   ### VLN历史帧选择逻辑详解
+
+   VLN的历史帧选择策略体现了StreamVLN论文中SlowFast架构的核心思想，通过**自适应采样间隔**和**完整历史覆盖**实现高效的记忆管理。
+
+   #### 核心设计理念
+   - **完整性**: 始终从轨迹起点（时间步0）开始，覆盖到当前时间点
+   - **自适应性**: 采样间隔随时间推移动态调整
+   - **均匀分布**: 历史帧在整个时间范围内均匀分布
+
+   #### 采样公式解析
+   ```python
+   history_step_ids = np.arange(0+valid_idx, time_ids[0]+valid_idx, max(time_ids[0] // self.num_history, 1))
+   ```
+
+   - **起始点**: `0+valid_idx` - 总是从轨迹的起始位置开始
+   - **结束点**: `time_ids[0]+valid_idx` - 当前时间窗口的起始位置
+   - **采样间隔**: `max(time_ids[0] // self.num_history, 1)` - 动态计算间隔
+
+   #### 详细示例说明
+
+   **示例1：早期阶段（密集采样）**
+   ```
+   配置: num_history=8, num_frames=32, valid_idx=0
+   当前时间窗口: time_ids = [0, 1, 2, ..., 31] (从第0步开始)
+
+   条件检查: time_ids[0] = 0 → time_ids[0] == 0
+   结果: history_frames = [] (无历史帧，因为是序列起点)
+   ```
+
+   **示例2：中期阶段（中等密度采样）**
+   ```
+   配置: num_history=8, num_frames=32, valid_idx=0
+   当前时间窗口: time_ids = [16, 17, 18, ..., 47] (从第16步开始)
+
+   条件检查: time_ids[0] = 16 → time_ids[0] != 0
+
+   采样计算:
+   - history_step_ids = np.arange(0, 16, max(16//8, 1))
+   - history_step_ids = np.arange(0, 16, max(2, 1)) = [0, 2, 4, 6, 8, 10, 12, 14]
+
+   结果: history_frames = [frame_0, frame_2, frame_4, frame_6, frame_8, frame_10, frame_12, frame_14]
+   特点: 8个历史帧，覆盖整个历史范围，间隔为2步
+   ```
+
+   **示例3：后期阶段（稀疏采样）**
+   ```
+   配置: num_history=8, num_frames=32, valid_idx=0
+   当前时间窗口: time_ids = [64, 65, 66, ..., 95] (从第64步开始)
+
+   条件检查: time_ids[0] = 64 → time_ids[0] != 0
+
+   采样计算:
+   - history_step_ids = np.arange(0, 64, max(64//8, 1))
+   - history_step_ids = np.arange(0, 64, max(8, 1)) = [0, 8, 16, 24, 32, 40, 48, 56]
+
+   结果: history_frames = [frame_0, frame_8, frame_16, frame_24, frame_32, frame_40, frame_48, frame_56]
+   特点: 8个历史帧，覆盖0-64步，间隔为8步，实现长期记忆
+   ```
+
+   **示例4：超长期导航（自适应大间隔）**
+   ```
+   配置: num_history=8, num_frames=32, valid_idx=0
+   当前时间窗口: time_ids = [200, 201, 202, ..., 231] (从第200步开始)
+
+   条件检查: time_ids[0] = 200 → time_ids[0] != 0
+
+   采样计算:
+   - history_step_ids = np.arange(0, 200, max(200//8, 1))
+   - history_step_ids = np.arange(0, 200, max(25, 1)) = [0, 25, 50, 75, 100, 125, 150, 175]
+
+   结果: history_frames = [frame_0, frame_25, frame_50, frame_75, frame_100, frame_125, frame_150, frame_175]
+   特点: 8个历史帧，覆盖0-200步，间隔为25步，实现超长期记忆压缩
+   ```
+
+   #### 时间轴演化示例
+
+   假设一个完整的导航任务有200个时间步，使用滑动窗口处理：
+
+   ```
+   时间窗口1: time_ids = [0-31]   →  history_frames = []
+                                      说明: 起始阶段，无历史信息
+
+   时间窗口2: time_ids = [16-47]  →  history_frames = [0, 2, 4, 6, 8, 10, 12, 14]
+                                      说明: 早期记忆，间隔2步
+
+   时间窗口3: time_ids = [32-63]  →  history_frames = [0, 4, 8, 12, 16, 20, 24, 28]
+                                      说明: 中期记忆，间隔4步
+
+   时间窗口4: time_ids = [64-95]  →  history_frames = [0, 8, 16, 24, 32, 40, 48, 56]
+                                      说明: 长期记忆，间隔8步
+
+   时间窗口5: time_ids = [96-127] →  history_frames = [0, 12, 24, 36, 48, 60, 72, 84]
+                                      说明: 超长期记忆，间隔12步
+   ```
+
+   #### 设计优势
+
+   1. **计算效率**:
+      - 固定的历史帧数量（num_history）避免内存爆炸
+      - 自适应间隔根据时间长度动态调整
+
+   2. **信息完整性**:
+      - 总是包含轨迹的起点信息
+      - 历史帧均匀分布，保证时间信息的完整性
+
+   3. **语义合理性**:
+      - 早期密集采样：关键决策阶段需要详细信息
+      - 后期稀疏采样：保持长期记忆的同时控制计算成本
+
+   4. **流式兼容**:
+      - 支持在线推理和实时导航
+      - 滑动窗口机制适应不同长度的轨迹
+
+   这种历史帧选择策略完美体现了StreamVLN的核心理念：**在保持长期记忆的同时实现高效的流式处理**。
 
 4. **图像预处理管道**:
    ```python
