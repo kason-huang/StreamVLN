@@ -203,7 +203,7 @@ class ObjNavActionDataset(Dataset):
         self.remove_init_turns = getattr(data_args, 'remove_init_turns', False)
 
         # ObjectNav数据路径
-        self.video_folder = getattr(data_args, 'objectnav_video_folder', '').split(',')
+        self.video_folder = getattr(data_args, 'objnav_video_folder', '').split(',')
 
         # 加载ObjectNav数据
         self.nav_data = self.load_objectnav_data()
@@ -456,12 +456,13 @@ class ObjNavActionDataset(Dataset):
         sample_frames = [os.path.join(rgb_folder, video_frames[i]) for i in sample_step_ids]
 
         # 采样历史帧
-        history_frames = []
         if time_ids[0] != 0:
-            history_start = max(0+valid_idx, time_ids[0]+valid_idx - (time_ids[0] // max(self.num_history, 1)))
-            history_step_ids = np.arange(history_start, min(time_ids[0]+valid_idx, len(video_frames)), max(time_ids[0] // self.num_history, 1))
+            # 使用与VLN相同的逻辑：从起点到当前时间点的完整历史
+            history_step_ids = np.arange(0+valid_idx, time_ids[0]+valid_idx, max(time_ids[0] // self.num_history, 1))
             history_step_ids = history_step_ids[history_step_ids < len(video_frames)]
             history_frames = [os.path.join(rgb_folder, video_frames[i]) for i in history_step_ids]
+        else:
+            history_frames = []
 
         # 处理图像
         images = []
