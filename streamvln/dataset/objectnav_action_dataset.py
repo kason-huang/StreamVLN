@@ -6,6 +6,7 @@ import random
 import tokenizers
 import numpy as np
 import transformers
+import gzip
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 
@@ -264,27 +265,61 @@ class ObjNavActionDataset(Dataset):
             if not vf.strip():
                 continue
 
-            anno_path = os.path.join(vf, 'annotations.json')
-            if not os.path.exists(anno_path):
-                print(f"Warning: ObjectNav annotation file not found: {anno_path}")
+            # 查找annotations目录
+            annotations_dir = os.path.join(vf, 'annotations')
+            if not os.path.exists(annotations_dir):
+                print(f"Warning: ObjectNav annotations directory not found: {annotations_dir}")
                 continue
 
-            try:
-                with open(anno_path, 'r') as f:
-                    objectnav_data = json.load(f)
+            # 查找所有.json.gz文件
+            json_gz_files = []
+            for filename in os.listdir(annotations_dir):
+                if filename.endswith('.json.gz'):
+                    json_gz_files.append(filename)
 
-                print(f"Loading {len(objectnav_data)} ObjectNav episodes from {vf}")
+            if not json_gz_files:
+                print(f"Warning: No .json.gz files found in {annotations_dir}")
+                continue
 
-                # 转换数据格式
-                for item in objectnav_data:
-                    converted_item = self.convert_objectnav_format(item, vf)
-                    if converted_item:
-                        nav_data.append(converted_item)
+            print(f"Found {len(json_gz_files)} .json.gz files in {annotations_dir}")
 
-            except Exception as e:
-                print(f"Error loading ObjectNav data from {vf}: {e}")
+            # 加载所有.json.gz文件并合并数据
+            all_objectnav_data = []
+            for gz_file in sorted(json_gz_files):
+                gz_path = os.path.join(annotations_dir, gz_file)
+                scene_name = gz_file.replace('.json.gz', '')
 
-        print(f"Successfully loaded {len(nav_data)} ObjectNav episodes")
+                try:
+                    with gzip.open(gz_path, 'rt', encoding='utf-8') as f:
+                        scene_data = json.load(f)
+
+                    # 为每个数据项添加场景名称信息
+                    if isinstance(scene_data, list):
+                        for item in scene_data:
+                            if isinstance(item, dict):
+                                item['scene_name'] = scene_name
+                        all_objectnav_data.extend(scene_data)
+                    else:
+                        # 如果是单个字典，包装成列表
+                        if isinstance(scene_data, dict):
+                            scene_data['scene_name'] = scene_name
+                        all_objectnav_data.append(scene_data)
+
+                    print(f"Loaded {len(scene_data) if isinstance(scene_data, list) else 1} episodes from scene {scene_name}")
+
+                except Exception as e:
+                    print(f"Error loading ObjectNav data from {gz_path}: {e}")
+                    continue
+
+            print(f"Total {len(all_objectnav_data)} ObjectNav episodes from {vf}")
+
+            # 转换数据格式
+            for item in all_objectnav_data:
+                converted_item = self.convert_objectnav_format(item, vf)
+                if converted_item:
+                    nav_data.append(converted_item)
+
+        print(f"Successfully loaded {len(nav_data)} ObjectNav episodes in total")
         return nav_data
 
     def convert_objectnav_format(self, item, base_path):
