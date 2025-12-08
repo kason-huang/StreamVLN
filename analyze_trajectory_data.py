@@ -236,8 +236,39 @@ def analyze_trajectory_data():
                         percentage = (episode_count / total_episodes_dataset) * 100
                         f_csv.write(f"{dataset_name},{scene_name},{episode_count},{percentage:.2f}%\n")
 
+        # 生成按scene汇总的CSV文件
+        scene_summary_counts = defaultdict(int)  # 汇总每个scene在所有dataset中的总episode数
+        scene_dataset_info = defaultdict(list)  # 记录每个scene在哪些dataset中出现
+
+        for stats in all_stats:
+            dataset_name = stats['dataset']
+            if 'scene_episode_counts' in stats:
+                for scene_name, episode_count in stats['scene_episode_counts'].items():
+                    scene_summary_counts[scene_name] += episode_count
+                    scene_dataset_info[scene_name].append(f"{dataset_name}:{episode_count}")
+
+        # 按总episode数量降序排列
+        sorted_scene_summary = sorted(scene_summary_counts.items(), key=lambda x: x[1], reverse=True)
+
+        # 保存scene汇总统计
+        summary_csv_file = "/root/workspace/lab/StreamVLN/scene_summary_statistics.csv"
+        with open(summary_csv_file, 'w', encoding='utf-8') as f_csv:
+            f_csv.write("Scene,TotalEpisodeCount,Percentage,DatasetsInfo\n")
+            for scene_name, total_count in sorted_scene_summary:
+                percentage = (total_count / total_episodes) * 100
+                datasets_info = "; ".join(scene_dataset_info[scene_name])
+                f_csv.write(f"{scene_name},{total_count},{percentage:.2f}%,{datasets_info}\n")
+
         print(f"\n💾 详细报告已保存到: {output_file}")
         print(f"💾 场景episode统计已保存到: {csv_file}")
+        print(f"💾 场景汇总统计已保存到: {summary_csv_file}")
+
+        # 打印汇总统计的前10个场景
+        print(f"\n📊 Top 10 场景 (所有数据集汇总):")
+        for i, (scene_name, total_count) in enumerate(sorted_scene_summary[:10], 1):
+            percentage = (total_count / total_episodes) * 100
+            datasets_info = ", ".join([info.split(":")[0] for info in scene_dataset_info[scene_name]])
+            print(f"  {i}. {scene_name}: {total_count} episodes ({percentage:.2f}%) - 来自: {datasets_info}")
 
     return {
         'total_episodes': total_episodes,
