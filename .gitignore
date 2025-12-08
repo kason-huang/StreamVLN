@@ -56,10 +56,9 @@ data_old
 habitat-lab
 ./data/
 /self_checkpoints
-/checkpoints/
+/checkpoints
 /data
 /habitat-lab
 __pycache__/
 /results/
 /wandb/
-

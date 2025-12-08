@@ -1,398 +1,765 @@
-"""
-Object Navigation Evaluation for StreamVLN
-"""
-
+import sys
+import argparse
 import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import copy
+import gzip
+import itertools
 import json
+import math
+import random
+import re
+from collections import OrderedDict
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 import torch
-from typing import Dict, List, Tuple
-from collections import defaultdict
+import transformers
+import habitat
+from PIL import Image
+from habitat import logger, Env
+from habitat_baselines.config.default import get_config as get_habitat_config
+from habitat.config.default import get_agent_config
+from habitat.config.default_structured_configs import (
+    CollisionsMeasurementConfig,
+    FogOfWarConfig,
+    TopDownMapMeasurementConfig,
+)
+from habitat.utils.visualizations import maps
+from habitat.utils.visualizations.utils import images_to_video, observations_to_image
+from habitat_extensions import measures
 
-class ObjectNavMetrics:
-    """
-    ObjectNav专用评估指标
-    """
+from transformers.image_utils import to_numpy_array
 
-    def __init__(self, success_threshold=0.5, object_detection_threshold=0.7):
-        self.success_threshold = success_threshold  # 距离目标物体的阈值
-        self.object_detection_threshold = object_detection_threshold  # 物体检测置信度阈值
-        self.reset()
+from model.stream_video_vln import StreamVLNForCausalLM
+from utils.dist import *
+from utils.utils import (
+    DEFAULT_IMAGE_TOKEN,
+    DEFAULT_MEMORY_TOKEN,
+    DEFAULT_VIDEO_TOKEN,
+    IMAGE_TOKEN_INDEX,
+    MEMORY_TOKEN_INDEX,
+    dict_to_cuda,
+)
 
-    def reset(self):
-        """重置所有指标"""
-        self.episodes = []
-        self.total_episodes = 0
-        self.successful_episodes = 0
-        self.total_path_length = 0.0
-        self.oracle_path_length = 0.0
-        self.total_steps = 0
-        self.success_steps = 0
-        self.total_navigation_error = 0.0
-        self.object_detections = 0
-        self.correct_object_detections = 0
-
-    def add_episode(self, episode_data: Dict):
-        """
-        添加一个episode的数据
-        episode_data: {
-            'id': int,
-            'object_category': str,
-            'target_location': [x, y, z],
-            'predicted_actions': List[int],
-            'final_position': [x, y, z],
-            'path_length': float,
-            'oracle_path_length': float,
-            'object_detections': List[{'category': str, 'confidence': float, 'position': [x, y, z]}]
-        }
-        """
-        self.episodes.append(episode_data)
-        self.total_episodes += 1
-
-        # 计算各种指标
-        success = self.compute_success(episode_data)
-        navigation_error = self.compute_navigation_error(episode_data)
-        object_success = self.compute_object_success(episode_data)
-
-        if success:
-            self.successful_episodes += 1
-            self.success_steps += len(episode_data['predicted_actions'])
-
-        self.total_path_length += episode_data['path_length']
-        self.oracle_path_length += episode_data['oracle_path_length']
-        self.total_steps += len(episode_data['predicted_actions'])
-        self.total_navigation_error += navigation_error
-
-        # 物体检测统计
-        detections = episode_data.get('object_detections', [])
-        if detections:
-            self.object_detections += len(detections)
-            for detection in detections:
-                if (detection['category'] == episode_data['object_category'] and
-                    detection['confidence'] >= self.object_detection_threshold):
-                    self.correct_object_detections += 1
-
-    def compute_success(self, episode_data: Dict) -> bool:
-        """
-        计算基础成功指标：是否到达目标物体附近
-        """
-        try:
-            final_position = np.array(episode_data['final_position'])
-            target_position = np.array(episode_data['target_location'])
-            distance = np.linalg.norm(final_position - target_position)
-            return distance < self.success_threshold
-        except:
-            return False
-
-    def compute_navigation_error(self, episode_data: Dict) -> float:
-        """
-        计算导航误差：到目标物体的距离
-        """
-        try:
-            final_position = np.array(episode_data['final_position'])
-            target_position = np.array(episode_data['target_location'])
-            return np.linalg.norm(final_position - target_position)
-        except:
-            return float('inf')
-
-    def compute_object_success(self, episode_data: Dict) -> bool:
-        """
-        计算物体成功指标：空间成功 + 物体识别成功
-        """
-        spatial_success = self.compute_success(episode_data)
-
-        # 检查是否正确识别了目标物体
-        detections = episode_data.get('object_detections', [])
-        object_detection_success = False
-
-        for detection in detections:
-            if (detection['category'] == episode_data['object_category'] and
-                detection['confidence'] >= self.object_detection_threshold):
-                object_detection_success = True
-                break
-
-        return spatial_success and object_detection_success
-
-    def compute_spl(self) -> float:
-        """
-        计算SPL (Success weighted by Path Length)
-        """
-        if self.total_episodes == 0:
-            return 0.0
-
-        spl_sum = 0.0
-        for episode in self.episodes:
-            success = self.compute_success(episode)
-            if success:
-                path_length = episode['path_length']
-                oracle_length = episode['oracle_path_length']
-                if oracle_length > 0:
-                    spl_sum += oracle_length / max(path_length, oracle_length)
-
-        return spl_sum / self.total_episodes
-
-    def compute_success_rate(self) -> float:
-        """
-        计算成功率
-        """
-        if self.total_episodes == 0:
-            return 0.0
-        return self.successful_episodes / self.total_episodes
-
-    def compute_object_finding_rate(self) -> float:
-        """
-        计算物体发现率
-        """
-        successful_episodes = 0
-        for episode in self.episodes:
-            if self.compute_object_success(episode):
-                successful_episodes += 1
-
-        if self.total_episodes == 0:
-            return 0.0
-        return successful_episodes / self.total_episodes
-
-    def compute_time_to_success(self) -> float:
-        """
-        计算平均成功时间（步数）
-        """
-        if self.successful_episodes == 0:
-            return float('inf')
-        return self.success_steps / self.successful_episodes
-
-    def compute_navigation_error(self) -> float:
-        """
-        计算平均导航误差
-        """
-        if self.total_episodes == 0:
-            return float('inf')
-        return self.total_navigation_error / self.total_episodes
-
-    def compute_object_detection_accuracy(self) -> float:
-        """
-        计算物体检测准确率
-        """
-        if self.object_detections == 0:
-            return 0.0
-        return self.correct_object_detections / self.object_detections
-
-    def get_metrics(self) -> Dict:
-        """
-        返回所有评估指标
-        """
-        return {
-            'total_episodes': self.total_episodes,
-            'success_rate': self.compute_success_rate(),
-            'spl': self.compute_spl(),
-            'object_finding_rate': self.compute_object_finding_rate(),
-            'time_to_success': self.compute_time_to_success(),
-            'navigation_error': self.compute_navigation_error(),
-            'object_detection_accuracy': self.compute_object_detection_accuracy(),
-            'average_path_length': self.total_path_length / max(self.total_episodes, 1),
-            'average_steps': self.total_steps / max(self.total_episodes, 1)
-        }
-
-    def print_metrics(self):
-        """
-        打印评估结果
-        """
-        metrics = self.get_metrics()
-
-        print("\n" + "="*60)
-        print("Object Navigation Evaluation Results")
-        print("="*60)
-        print(f"Total Episodes: {metrics['total_episodes']}")
-        print(f"Success Rate: {metrics['success_rate']:.2%}")
-        print(f"SPL: {metrics['spl']:.4f}")
-        print(f"Object Finding Rate: {metrics['object_finding_rate']:.2%}")
-
-        if metrics['time_to_success'] != float('inf'):
-            print(f"Time to Success: {metrics['time_to_success']:.2f} steps")
-        else:
-            print("Time to Success: N/A (no successful episodes)")
-
-        if metrics['navigation_error'] != float('inf'):
-            print(f"Navigation Error: {metrics['navigation_error']:.3f} meters")
-        else:
-            print("Navigation Error: N/A")
-
-        print(f"Object Detection Accuracy: {metrics['object_detection_accuracy']:.2%}")
-        print(f"Average Path Length: {metrics['average_path_length']:.2f} meters")
-        print(f"Average Steps: {metrics['average_steps']:.2f}")
-        print("="*60)
-
-    def save_metrics(self, filepath: str):
-        """
-        保存评估结果到文件
-        """
-        metrics = self.get_metrics()
-
-        # 添加额外信息
-        metrics.update({
-            'success_threshold': self.success_threshold,
-            'object_detection_threshold': self.object_detection_threshold,
-            'evaluation_timestamp': str(np.datetime64('now'))
-        })
-
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, 'w') as f:
-            json.dump(metrics, f, indent=2)
-
-        print(f"Metrics saved to: {filepath}")
+try:
+    from depth_camera_filtering import filter_depth
+except ImportError:
+    def filter_depth(depth, blur_type=None):
+        return depth
 
 
 class ObjectNavEvaluator:
     """
-    ObjectNav评估器主类
+    HM3D ObjectNav evaluator using StreamVLN.
     """
 
-    def __init__(self, config: Dict):
-        self.config = config
-        self.metrics = ObjectNavMetrics(
-            success_threshold=config.get('success_distance', 0.5),
-            object_detection_threshold=config.get('object_detection_threshold', 0.7)
-        )
+    def __init__(
+        self,
+        config_path: str,
+        split: str,
+        env_num: int,
+        output_path: Optional[str],
+        model: Any,
+        tokenizer: Any,
+        epoch: int,
+        args: argparse.Namespace,
+    ):
+        self.args = args
+        self.device = torch.device(args.device)
+        self.split = split
+        self.env_num = env_num
+        self.save_video = args.save_video
+        self.output_path = output_path
+        self.epoch = epoch
 
-    def evaluate_episode(self, episode_data: Dict) -> Dict:
-        """
-        评估单个episode
-        """
-        self.metrics.add_episode(episode_data)
-
-        return {
-            'success': self.metrics.compute_success(episode_data),
-            'object_success': self.metrics.compute_object_success(episode_data),
-            'navigation_error': self.metrics.compute_navigation_error(episode_data),
-            'path_length': episode_data.get('path_length', 0),
-            'steps': len(episode_data.get('predicted_actions', []))
+        self.config_path = config_path
+        self.config = get_habitat_config(self.config_path, overrides=[f"habitat.dataset.split={self.split}"])
+        self.agent_config = get_agent_config(self.config.habitat.simulator)
+        self.sim_sensors_config = self.config.habitat.simulator.agents.main_agent.sim_sensors
+        self.idx_to_action: Dict[int, Dict[str, str]] = {
+            0: {"action": "stop"},
+            1: {"action": "move_forward"},
+            2: {"action": "turn_left"},
+            3: {"action": "turn_right"},
         }
 
-    def evaluate_dataset(self, predictions: List[Dict], ground_truth: List[Dict]) -> Dict:
-        """
-        评估整个数据集
-        """
-        # 合并预测和真实数据
-        for i, (pred, gt) in enumerate(zip(predictions, ground_truth)):
-            episode_data = {
-                'id': gt.get('id', i),
-                'object_category': gt.get('object_category', ''),
-                'target_location': gt.get('target_location', [0, 0, 0]),
-                'predicted_actions': pred.get('actions', []),
-                'final_position': pred.get('final_position', [0, 0, 0]),
-                'path_length': pred.get('path_length', 0),
-                'oracle_path_length': gt.get('oracle_path_length', 1),
-                'object_detections': pred.get('object_detections', [])
-            }
+        self.model = model
+        self.tokenizer = tokenizer
+        self.image_processor = self.model.get_vision_tower().image_processor
 
-            self.evaluate_episode(episode_data)
+        self.num_frames = args.num_frames
+        self.num_future_steps = args.num_future_steps
+        self.num_history = args.num_history
+        self.repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        self.dataset_path = self._resolve_dataset_path()
+        self.total_dataset_episodes = self._count_dataset_episodes(self.dataset_path)
 
-        return self.metrics.get_metrics()
+        depth_sensor = getattr(self.sim_sensors_config, "depth_sensor", None)
+        rgb_sensor = getattr(self.sim_sensors_config, "rgb_sensor", None)
+        self._camera_height = rgb_sensor.position[1] if rgb_sensor is not None else 0.0
+        if depth_sensor is not None:
+            self._min_depth = getattr(depth_sensor, "min_depth", 0.1)
+            self._max_depth = getattr(depth_sensor, "max_depth", 10.0)
+            camera_fov_rad = np.deg2rad(getattr(depth_sensor, "hfov", 90.0))
+            self._camera_fov = camera_fov_rad
+            self._fx = depth_sensor.width / (2 * np.tan(camera_fov_rad / 2))
+            self._fy = self._fx
+        else:
+            self._min_depth = None
+            self._max_depth = None
+            self._camera_fov = None
+            self._fx = None
+            self._fy = None
+        self.axis_align_matrix = self.get_axis_align_matrix()
 
-    def evaluate_from_file(self, predictions_file: str, ground_truth_file: str, output_file: str = None):
-        """
-        从文件加载并评估
-        """
-        # 加载数据
-        with open(predictions_file, 'r') as f:
-            predictions = json.load(f)
+        requested_total = args.max_episodes if args.max_episodes is not None else -1
+        if requested_total is None or requested_total <= 0:
+            self.target_total_episodes = self.total_dataset_episodes
+        else:
+            if self.total_dataset_episodes > 0:
+                self.target_total_episodes = min(requested_total, self.total_dataset_episodes)
+            else:
+                self.target_total_episodes = requested_total
 
-        with open(ground_truth_file, 'r') as f:
-            ground_truth = json.load(f)
+        if self.target_total_episodes is None or self.target_total_episodes <= 0:
+            self.max_episodes_per_worker = -1
+        else:
+            self.max_episodes_per_worker = math.ceil(self.target_total_episodes / max(1, self.env_num))
+        self.nav_action_names = ["move_forward", "turn_left", "turn_right", "stop"]
 
-        # 评估
-        metrics = self.evaluate_dataset(predictions, ground_truth)
+        self._configure_prompt()
 
-        # 打印结果
-        self.metrics.print_metrics()
-
-        # 保存结果
-        if output_file:
-            self.metrics.save_metrics(output_file)
-
-        return metrics
-
-
-def evaluate_objectnav(model, dataloader, device, config):
-    """
-    运行ObjectNav评估
-    """
-    model.eval()
-    evaluator = ObjectNavEvaluator(config)
-
-    predictions = []
-    ground_truth = []
-
-    with torch.no_grad():
-        for batch_idx, batch in enumerate(dataloader):
-            # 获取batch数据
-            input_ids = batch['input_ids'].to(device)
-            images = batch['images'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-
-            # 模型预测
-            outputs = model(
-                input_ids=input_ids,
-                images=images,
-                attention_mask=attention_mask
+    def _sanitize_metric(self, value: Any, metric_name: str, episode_id: str, default: float = 0.0) -> float:
+        """Ensure metrics do not propagate NaN/Inf downstream."""
+        if value is None:
+            logger.warning(
+                "[Metric sanitize] episode=%s metric=%s missing; defaulting to %.4f",
+                episode_id,
+                metric_name,
+                default,
             )
+            return default
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                "[Metric sanitize] episode=%s metric=%s not convertible (%s); defaulting to %.4f",
+                episode_id,
+                metric_name,
+                value,
+                default,
+            )
+            return default
 
-            # 处理预测结果
-            predicted_actions = torch.argmax(outputs.logits, dim=-1).cpu().numpy()
+        if not math.isfinite(numeric_value):
+            logger.warning(
+                "[Metric sanitize] episode=%s metric=%s non-finite (%s); defaulting to %.4f",
+                episode_id,
+                metric_name,
+                numeric_value,
+                default,
+            )
+            return default
+        return numeric_value
 
-            # 保存结果
-            for i in range(len(batch['task_type'])):
-                pred_data = {
-                    'episode_id': batch_idx,
-                    'actions': predicted_actions[i].tolist(),
-                    'final_position': [0, 0, 0],  # 需要从轨迹计算
-                    'path_length': 0,  # 需要从轨迹计算
-                    'object_detections': []  # 需要实现物体检测
+    def _resolve_dataset_path(self) -> str:
+        data_path = self.config.habitat.dataset.data_path
+        if isinstance(data_path, str) and "{split}" in data_path:
+            try:
+                data_path = data_path.format(split=self.split)
+            except KeyError:
+                logger.warning("Failed to format dataset path %s with split %s", data_path, self.split)
+        if not os.path.isabs(data_path):
+            data_path = os.path.abspath(os.path.join(self.repo_root, data_path))
+        return data_path
+
+    def _count_dataset_episodes(self, dataset_path: str) -> int:
+        if not dataset_path:
+            return -1
+        try:
+            with gzip.open(dataset_path, "rt", encoding="utf-8") as f:
+                data = json.load(f)
+            episodes = data.get("episodes", [])
+            return len(episodes)
+        except FileNotFoundError:
+            logger.warning("Dataset file %s not found; defaulting to unlimited episodes", dataset_path)
+        except json.JSONDecodeError:
+            logger.warning("Dataset file %s is not valid JSON; defaulting to unlimited episodes", dataset_path)
+        except OSError as exc:
+            logger.warning("Failed to open dataset file %s: %s", dataset_path, exc)
+        return -1
+
+    def _configure_prompt(self) -> None:
+        prompt = (
+            "<video>\n"
+            "You are an autonomous agent executing object navigation in HM3D.\n"
+            "Your task is to reach the goal object following the available actions: "
+            "TURN LEFT (←) or TURN RIGHT (→) by 15 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
+        )
+        self.conversation = [{"from": "human", "value": prompt}, {"from": "gpt", "value": ""}]
+        self.actions2idx = OrderedDict(
+            {
+                "STOP": [0],
+                "↑": [1],
+                "←": [2],
+                "→": [3],
+            }
+        )
+        self.conjunctions = [
+            "you can see ",
+            "in front of you is ",
+            "there is ",
+            "you can spot ",
+            "you are toward the ",
+            "ahead of you is ",
+            "in your sight is ",
+        ]
+
+    def config_env(self) -> Env:
+        with habitat.config.read_write(self.config):
+            self.config.habitat.dataset.split = self.split
+            measurement_cfg = self.config.habitat.task.measurements
+            measurement_cfg.update(
+                {
+                    "top_down_map": TopDownMapMeasurementConfig(
+                        map_padding=3,
+                        map_resolution=1024,
+                        draw_source=True,
+                        draw_border=True,
+                        draw_shortest_path=True,
+                        draw_view_points=True,
+                        draw_goal_positions=True,
+                        draw_goal_aabbs=False,
+                        fog_of_war=FogOfWarConfig(draw=True, visibility_dist=5.0, fov=90),
+                    ),
+                    "collisions": CollisionsMeasurementConfig(),
                 }
+            )
+            self.config.habitat.simulator.scene_dataset = "hm3d"
+            self.config.habitat.seed = self.args.seed          # global seed
+            self.config.habitat.simulator.seed = self.args.seed  # per-simulator seed
+            self.config.habitat.simulator.create_renderer = self.args.render
+            self.config.habitat.simulator.debug_render = self.args.render
+        env = Env(config=self.config)
+        return env
 
-                gt_data = {
-                    'id': batch_idx,
-                    'object_category': 'unknown',  # 需要从数据获取
-                    'target_location': [0, 0, 0],
-                    'oracle_path_length': 1.0
-                }
+    def preprocess_depth_image(self, depth_image, do_depth_scale: bool = True, depth_scale: int = 1000):
+        target_height = self.image_processor.crop_size["height"]
+        target_width = self.image_processor.crop_size["width"]
+        resized_depth_image = depth_image.resize((target_width, target_height), Image.NEAREST)
 
-                predictions.append(pred_data)
-                ground_truth.append(gt_data)
+        img = to_numpy_array(resized_depth_image)
+        if do_depth_scale:
+            img = img / depth_scale
+        return torch.from_numpy(img).float(), (target_width, target_height)
 
-    # 评估
-    metrics = evaluator.evaluate_dataset(predictions, ground_truth)
-    return metrics
+    def get_intrinsic_matrix(self, sensor_cfg) -> np.ndarray:
+        width = sensor_cfg.width
+        height = sensor_cfg.height
+        fov = sensor_cfg.hfov
+        fx = (width / 2.0) / np.tan(np.deg2rad(fov / 2.0))
+        fy = fx
+        cx = (width - 1.0) / 2.0
+        cy = (height - 1.0) / 2.0
+
+        intrinsic_matrix = np.array(
+            [
+                [fx, 0.0, cx, 0.0],
+                [0.0, fy, cy, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        )
+        return intrinsic_matrix
+
+    def preprocess_intrinsic(self, intrinsic, ori_size, target_size):
+        intrinsic = copy.deepcopy(intrinsic)
+        if len(intrinsic.shape) == 2:
+            intrinsic = intrinsic[None, ...]
+        intrinsic[:, 0] /= ori_size[0] / target_size[0]
+        intrinsic[:, 1] /= ori_size[1] / target_size[1]
+        intrinsic[:, 0, 2] -= (target_size[0] - target_size[1]) / 2
+        if intrinsic.shape[0] == 1:
+            intrinsic = intrinsic.squeeze(0)
+        return intrinsic
+
+    def get_axis_align_matrix(self) -> torch.Tensor:
+        return torch.tensor(
+            [[0.0, 0.0, 1.0, 0.0], [-1.0, 0.0, 0.0, 0.0], [0.0, -1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+            dtype=torch.float32,
+        )
+
+    def xyz_yaw_to_tf_matrix(self, xyz: np.ndarray, yaw: float) -> np.ndarray:
+        x, y, z = xyz
+        transformation_matrix = np.array(
+            [
+                [np.cos(yaw), -np.sin(yaw), 0, x],
+                [np.sin(yaw), np.cos(yaw), 0, y],
+                [0, 0, 1, z],
+                [0, 0, 0, 1],
+            ]
+        )
+        return transformation_matrix
+
+    def parse_actions(self, output: str) -> List[int]:
+        action_patterns = "|".join(re.escape(action) for action in self.actions2idx)
+        regex = re.compile(action_patterns)
+        matches = regex.findall(output)
+        actions = [self.actions2idx[match] for match in matches]
+        return list(itertools.chain.from_iterable(actions))
+
+    def preprocess_qwen(
+        self,
+        sources,
+        tokenizer: transformers.PreTrainedTokenizer,
+        has_image: bool = False,
+        max_len: int = 2048,
+        system_message: str = "You are a helpful assistant.",
+        add_system: bool = False,
+    ):
+        roles = {"human": "user", "gpt": "assistant"}
+        tokenizer = copy.deepcopy(tokenizer)
+        if has_image:
+            tokenizer.add_tokens(["<image>"], special_tokens=True)
+            tokenizer.add_tokens(["<memory>"], special_tokens=True)
+
+        image_token_index = tokenizer.convert_tokens_to_ids("<image>")
+        memory_token_index = tokenizer.convert_tokens_to_ids("<memory>")
+        im_start, im_end = tokenizer.additional_special_tokens_ids
+        nl_tokens = tokenizer("\n").input_ids
+
+        chat_template = (
+            "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}"
+            "{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+        )
+        tokenizer.chat_template = chat_template
+
+        conversations = []
+        input_ids = []
+        for source in sources:
+            prompt = random.choice(self.conjunctions) + DEFAULT_IMAGE_TOKEN
+            if len(source[0]["value"]) != 0:
+                source[0]["value"] += f" {prompt}."
+            else:
+                source[0]["value"] = f"{prompt}."
+            if roles.get(source[0]["from"], roles["human"]) != roles["human"]:
+                source = source[1:]
+
+            tokens = []
+            if add_system:
+                tokens += tokenizer.apply_chat_template([
+                    {"role": "system", "content": system_message}
+                ])
+
+            for conv in source:
+                role = conv.get("role", conv.get("from"))
+                content = conv.get("content", conv.get("value", ""))
+                role = roles.get(role, role)
+                conversations.append(content)
+                tokens += tokenizer.apply_chat_template([
+                    {"role": role, "content": content}
+                ])
+
+            for idx, token in enumerate(tokens):
+                if token == image_token_index:
+                    tokens[idx] = IMAGE_TOKEN_INDEX
+                if token == memory_token_index:
+                    tokens[idx] = MEMORY_TOKEN_INDEX
+
+            input_ids.append(tokens[:max_len])
+
+        input_ids = torch.tensor(input_ids, dtype=torch.long)
+        return input_ids, conversations
+
+    def eval_action(self, idx: int):
+        env = self.config_env()
+        all_episodes = env.episodes
+        if len(all_episodes) == 0:
+            env.close()
+            empty_tensor = torch.empty(0, device=self.device)
+            return empty_tensor, empty_tensor, empty_tensor, empty_tensor, torch.tensor([0], device=self.device)
+
+        assigned_episodes = all_episodes[idx::self.env_num]
+        if len(assigned_episodes) == 0:
+            env.close()
+            empty_tensor = torch.empty(0, device=self.device)
+            return empty_tensor, empty_tensor, empty_tensor, empty_tensor, torch.tensor([0], device=self.device)
+
+        if self.max_episodes_per_worker > 0:
+            assigned_episodes = assigned_episodes[: self.max_episodes_per_worker]
+
+        stats: Dict[str, List[float]] = {"success": [], "spl": [], "soft_spl": [], "distance_to_goal": []}
+
+        try:
+            rgb_sensor_cfg = getattr(self.sim_sensors_config, "rgb_sensor", None)
+            intrinsic_matrix = (
+                self.get_intrinsic_matrix(rgb_sensor_cfg) if rgb_sensor_cfg is not None else np.eye(4)
+            )
+            axis_align_matrix = self.axis_align_matrix
+
+            for episode in assigned_episodes:
+                env.current_episode = episode
+                self.model.reset_for_env(idx)
+                observations = env.reset()
+
+                scene_id_raw = getattr(episode, "scene_id", "")
+                scene_name = os.path.splitext(os.path.basename(scene_id_raw))[0] if scene_id_raw else f"scene_{idx}"
+                episode_id = getattr(episode, "episode_id", len(stats["success"]))
+                episode_id_str = str(episode_id)
+                vis_frames: List[np.ndarray] = []
+                video_basename = f"{scene_name}_{episode_id_str}"
+
+                if self.save_video and self.output_path:
+                    check_dir = os.path.join(self.output_path, f"check_sim_{self.epoch}")
+                    os.makedirs(check_dir, exist_ok=True)
+                    Image.fromarray(observations["rgb"]).save(
+                        os.path.join(check_dir, f"rgb_{idx}.jpg")
+                    )
+                    vis_dir = os.path.join(self.output_path, f"vis_{self.epoch}")
+                    os.makedirs(vis_dir, exist_ok=True)
+
+                initial_height = env.sim.get_agent_state().position[1]
+
+                rgb_list: List[torch.Tensor] = []
+                depth_list: List[torch.Tensor] = []
+                pose_list: List[torch.Tensor] = []
+                intrinsic_list: List[torch.Tensor] = []
+                time_ids: List[int] = []
+                action_seq: List[int] = []
+                past_key_values = None
+                output_ids = None
+                step_id = 0
+                goal_description = getattr(episode, "object_category", None)
+
+                while not env.episode_over:
+                    self.model.eval()
+                    time_ids.append(step_id)
+
+                    rgb = observations["rgb"]
+                    depth_obs = observations.get("depth")
+                    gps_obs = np.asarray(observations.get("gps", np.zeros(2)), dtype=np.float32)
+                    if gps_obs.size >= 2:
+                        x, y = float(gps_obs[0]), float(gps_obs[1])
+                    else:
+                        x = y = 0.0
+                    compass_obs = observations.get("compass")
+                    compass_arr = (
+                        np.asarray(compass_obs, dtype=np.float32)
+                        if compass_obs is not None
+                        else None
+                    )
+                    camera_yaw = float(compass_arr[0]) if compass_arr is not None and compass_arr.size > 0 else 0.0
+
+                    depth_tensor: torch.Tensor
+                    resize_shape = (
+                        self.image_processor.crop_size["width"],
+                        self.image_processor.crop_size["height"],
+                    )
+                    if depth_obs is not None:
+                        depth_np = np.asarray(depth_obs)
+                        if depth_np.ndim == 3:
+                            depth_np = depth_np[..., 0]
+                        depth_np = filter_depth(depth_np, blur_type=None)
+                        if self._max_depth is not None and self._min_depth is not None:
+                            depth_np = depth_np * (self._max_depth - self._min_depth) + self._min_depth
+                        depth_mm = (depth_np * 1000.0).astype(np.uint16)
+                        depth_tensor, resize_shape = self.preprocess_depth_image(
+                            Image.fromarray(depth_mm, mode="I;16"), do_depth_scale=True
+                        )
+                    else:
+                        depth_tensor = torch.zeros(
+                            (
+                                self.image_processor.crop_size["height"],
+                                self.image_processor.crop_size["width"],
+                            ),
+                            dtype=torch.float32,
+                        )
+
+                    agent_state = env.sim.get_agent_state()
+                    height_delta = agent_state.position[1] - initial_height
+                    camera_position = np.array([x, -y, self._camera_height + height_delta])
+                    tf_camera_to_episodic = self.xyz_yaw_to_tf_matrix(camera_position, camera_yaw)
+
+                    image = Image.fromarray(rgb).convert("RGB")
+                    image_size = image.size
+                    image_tensor = self.image_processor.preprocess(images=image, return_tensors="pt")["pixel_values"][0]
+
+                    intrinsic_np = self.preprocess_intrinsic(intrinsic_matrix, image_size, resize_shape)
+                    intrinsic_tensor = torch.from_numpy(intrinsic_np).float()
+
+                    rgb_list.append(image_tensor)
+                    depth_list.append(depth_tensor.float())
+                    pose_list.append(torch.from_numpy(tf_camera_to_episodic).float() @ axis_align_matrix)
+                    intrinsic_list.append(intrinsic_tensor)
+
+                    if self.save_video and self.output_path:
+                        info = env.get_metrics()
+                        top_down = info.get("top_down_map") if isinstance(info, dict) else None
+                        if top_down is not None:
+                            frame = observations_to_image({"rgb": observations["rgb"]}, info)
+                            vis_frames.append(frame)
+
+                    if len(action_seq) == 0:
+                        model_history = getattr(self.model.model, "num_history", None) or 0
+                        required_frames = max(1, model_history + 1)
+                        if len(rgb_list) < required_frames:
+                            logger.debug(
+                                "Insufficient frames (%s/%s); defaulting to move_forward",
+                                len(rgb_list),
+                                required_frames,
+                            )
+                            action_seq = [1]
+                        else:
+                            start_index = max(0, len(rgb_list) - required_frames)
+                            selected_indices = list(range(start_index, len(rgb_list)))
+                            selected_rgb = [rgb_list[i] for i in selected_indices]
+                            selected_depth = [depth_list[i] for i in selected_indices]
+                            selected_pose = [pose_list[i] for i in selected_indices]
+                            selected_intrinsics = [intrinsic_list[i] for i in selected_indices]
+                            if len(time_ids) >= len(selected_indices):
+                                selected_time_ids = time_ids[-len(selected_indices):]
+                            else:
+                                selected_time_ids = selected_indices
+
+                            if output_ids is None:
+                                sources = copy.deepcopy(self.conversation)
+                                if goal_description:
+                                    sources[0]["value"] += f' The goal object category is "{goal_description}".'
+                                include_memory_token = model_history > 0 and start_index > 0
+                                if include_memory_token:
+                                    sources[0]["value"] += (
+                                        f" These are your historical observations {DEFAULT_MEMORY_TOKEN}."
+                                    )
+                                sources[0]["value"] = sources[0]["value"].replace(DEFAULT_VIDEO_TOKEN + "\n", "")
+                                add_system = True
+                            else:
+                                sources = [{"from": "human", "value": ""}, {"from": "gpt", "value": ""}]
+                                add_system = False
+
+                            input_ids, conversations = self.preprocess_qwen([sources], self.tokenizer, True, add_system=add_system)
+                            # Log the assembled prompt (textual conversations) for debugging / inspection
+                            # try:
+                            #     logger.info(
+                            #         f"[Prompt assembled] env={idx} ep={episode_id_str} step={step_id} convs={conversations}"
+                            #     )
+                            # except Exception as _:
+                            #     logger.warning("[Prompt assembled] failed to log conversations")
+                            if output_ids is not None:
+                                input_ids = torch.cat([output_ids, input_ids.to(output_ids.device)], dim=1)
+
+                            input_dict = {
+                                "images": torch.stack(selected_rgb).unsqueeze(0),
+                                "depths": torch.stack(selected_depth).unsqueeze(0),
+                                "poses": torch.stack(selected_pose).unsqueeze(0),
+                                "intrinsics": torch.stack(selected_intrinsics).unsqueeze(0),
+                                "inputs": input_ids,
+                                "env_id": idx,
+                                "time_ids": [selected_time_ids],
+                                "task_type": [0],
+                            }
+
+                            input_dict = dict_to_cuda(input_dict, self.device)
+                            for key in ["images", "depths", "poses", "intrinsics"]:
+                                input_dict[key] = input_dict[key].to(torch.bfloat16)
+
+                            outputs = self.model.generate(
+                                **input_dict,
+                                do_sample=False,
+                                num_beams=1,
+                                max_new_tokens=128,
+                                use_cache=True,
+                                return_dict_in_generate=True,
+                                past_key_values=past_key_values,
+                            )
+
+                            output_ids = outputs.sequences
+                            past_key_values = outputs.past_key_values
+                            llm_outputs = self.tokenizer.batch_decode(output_ids, skip_special_tokens=False)[0].strip()
+                            action_seq = self.parse_actions(llm_outputs)
+                            if len(action_seq) == 0:
+                                action_seq = [0]
+
+                    action_idx = action_seq.pop(0)
+                    habitat_action = self.idx_to_action.get(action_idx, self.idx_to_action[0])
+                    observations = env.step(habitat_action)
+                    step_id += 1
+
+                    if step_id % self.num_frames == 0:
+                        self.model.reset_for_env(idx)
+                        output_ids = None
+                        past_key_values = None
+                        time_ids = []
+
+                episode_metrics = env.get_metrics()
+                success_metric = self._sanitize_metric(
+                    episode_metrics.get("success", 0.0),
+                    "success",
+                    episode_id_str,
+                )
+                spl_metric = self._sanitize_metric(
+                    episode_metrics.get("spl", 0.0),
+                    "spl",
+                    episode_id_str,
+                )
+                soft_spl_metric = self._sanitize_metric(
+                    episode_metrics.get("soft_spl", episode_metrics.get("spl", 0.0)),
+                    "soft_spl",
+                    episode_id_str,
+                )
+                distance_to_goal = self._sanitize_metric(
+                    episode_metrics.get("distance_to_goal", episode_metrics.get("goal_distance", 0.0)),
+                    "distance_to_goal",
+                    episode_id_str,
+                )
+
+                stats["success"].append(success_metric)
+                stats["spl"].append(spl_metric)
+                stats["soft_spl"].append(soft_spl_metric)
+                stats["distance_to_goal"].append(distance_to_goal)
+
+                if self.save_video and self.output_path and vis_frames:
+                    images_to_video(
+                        vis_frames,
+                        os.path.join(self.output_path, f"vis_{self.epoch}"),
+                        video_basename,
+                        fps=6,
+                        quality=9,
+                    )
+                    vis_frames.clear()
+
+                completed_episodes = len(stats["success"])
+                running_success = float(np.mean(stats["success"])) if completed_episodes > 0 else 0.0
+                logger.info(
+                    "[Rank %s] Episode %s/%s running success rate: %.3f",
+                    get_rank(),
+                    completed_episodes,
+                    len(assigned_episodes),
+                    running_success,
+                )
+        finally:
+            env.close()
+
+        success_tensor = torch.tensor(stats["success"], device=self.device, dtype=torch.float32)
+        spl_tensor = torch.tensor(stats["spl"], device=self.device, dtype=torch.float32)
+        soft_spl_tensor = torch.tensor(stats["soft_spl"], device=self.device, dtype=torch.float32)
+        distance_to_goal_tensor = torch.tensor(stats["distance_to_goal"], device=self.device, dtype=torch.float32)
+        ep_count = torch.tensor([len(stats["success"])], device=self.device)
+        return success_tensor, spl_tensor, soft_spl_tensor, distance_to_goal_tensor, ep_count
+
+
+def eval():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--local_rank", default=0, type=int)
+    parser.add_argument("--model_path", type=str, default="")
+    parser.add_argument("--habitat_config_path", type=str, default="config/objectnav_hm3d.yaml")
+    parser.add_argument("--eval_split", type=str, default="val")
+    parser.add_argument("--output_path", type=str, default="./results/objectnav/hm3d")
+    parser.add_argument("--num_future_steps", type=int, default=4)
+    parser.add_argument("--num_frames", type=int, default=32)
+    parser.add_argument("--save_video", action="store_true", default=False)
+    parser.add_argument("--num_history", type=int, default=8)
+    parser.add_argument("--model_max_length", type=int, default=4096)
+    parser.add_argument("--max_episodes", type=int, default=None)
+    parser.add_argument("--world_size", default=1, type=int)
+    parser.add_argument("--rank", default=0, type=int)
+    parser.add_argument("--gpu", default=0, type=int)
+    parser.add_argument("--port", default="1111")
+    parser.add_argument("--dist_url", default="env://")
+    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--seed", default=0, type=int)
+    parser.add_argument("--render", action="store_true", default=False)
+    args = parser.parse_args()
+
+    init_distributed_mode(args)
+    local_rank = args.local_rank
+
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        args.model_path, model_max_length=args.model_max_length, padding_side="right"
+    )
+    config = transformers.AutoConfig.from_pretrained(args.model_path)
+    model = StreamVLNForCausalLM.from_pretrained(
+        args.model_path,
+        attn_implementation="flash_attention_2",
+        torch_dtype=torch.bfloat16,
+        config=config,
+        low_cpu_mem_usage=False,
+    )
+    model.model.num_history = args.num_history
+    model.requires_grad_(False)
+    model.to(local_rank)
+
+    evaluate(model, tokenizer, args)
+
+
+def _compute_finite_mean(tensor: torch.Tensor, metric_name: str) -> float:
+    """Return the mean of finite entries, logging and skipping NaN/Inf values."""
+    if tensor.numel() == 0:
+        return 0.0
+    finite_mask = torch.isfinite(tensor)
+    if not torch.all(finite_mask):
+        dropped = int((~finite_mask).sum().item())
+        logger.warning(
+            "[Metric aggregate] Dropping %d non-finite entries from %s before averaging",
+            dropped,
+            metric_name,
+        )
+        tensor = tensor[finite_mask]
+    if tensor.numel() == 0:
+        return 0.0
+    return tensor.mean().item()
+
+
+def evaluate(model, tokenizer, args):
+    model.eval()
+    world_size = get_world_size()
+    model.reset(world_size)
+
+    evaluator = ObjectNavEvaluator(
+        config_path=args.habitat_config_path,
+        split=args.eval_split,
+        env_num=world_size,
+        output_path=args.output_path,
+        model=model,
+        tokenizer=tokenizer,
+        epoch=0,
+        args=args,
+    )
+    success, spl, soft_spl, distance_to_goal, ep_count = evaluator.eval_action(get_rank())
+
+    counts_all = [torch.zeros_like(ep_count) for _ in range(world_size)]
+    dist.all_gather(counts_all, ep_count)
+
+    success_all = [torch.zeros(counts_all[i], device=success.device) for i in range(world_size)]
+    spl_all = [torch.zeros(counts_all[i], device=spl.device) for i in range(world_size)]
+    soft_spl_all = [torch.zeros(counts_all[i], device=soft_spl.device) for i in range(world_size)]
+    distance_to_goal_all = [torch.zeros(counts_all[i], device=distance_to_goal.device) for i in range(world_size)]
+
+    dist.barrier()
+    dist.all_gather(success_all, success)
+    dist.all_gather(spl_all, spl)
+    dist.all_gather(soft_spl_all, soft_spl)
+    dist.all_gather(distance_to_goal_all, distance_to_goal)
+    dist.barrier()
+
+    success_all = torch.cat(success_all, dim=0)
+    spl_all = torch.cat(spl_all, dim=0)
+    soft_spl_all = torch.cat(soft_spl_all, dim=0)
+    distance_to_goal_all = torch.cat(distance_to_goal_all, dim=0)
+
+    results = {
+        "success": _compute_finite_mean(success_all, "success"),
+        "spl": _compute_finite_mean(spl_all, "spl"),
+        "soft_spl": _compute_finite_mean(soft_spl_all, "soft_spl"),
+        "goal_distance": _compute_finite_mean(distance_to_goal_all, "goal_distance"),
+        "episodes": int(counts_all[0].sum().item()),
+    }
+    print(results)
+    if get_rank() == 0 and args.output_path:
+        os.makedirs(args.output_path, exist_ok=True)
+        with open(os.path.join(args.output_path, "objectnav_metrics.json"), "w") as f:
+            json.dump(results, f, indent=2)
 
 
 if __name__ == "__main__":
-    # 示例使用
-    config = {
-        'success_distance': 0.5,
-        'object_detection_threshold': 0.7
-    }
-
-    # 创建示例数据
-    predictions = [
-        {
-            'actions': [1, 3, 1, 0],
-            'final_position': [2.1, 0.0, 1.8],
-            'path_length': 1.5,
-            'object_detections': [
-                {'category': 'chair', 'confidence': 0.8, 'position': [2.0, 0.0, 1.7]}
-            ]
-        }
-    ]
-
-    ground_truth = [
-        {
-            'id': 1,
-            'object_category': 'chair',
-            'target_location': [2.0, 0.0, 1.7],
-            'oracle_path_length': 1.0
-        }
-    ]
-
-    # 运行评估
-    evaluator = ObjectNavEvaluator(config)
-    metrics = evaluator.evaluate_dataset(predictions, ground_truth)
-    evaluator.metrics.print_metrics()
+    eval()
