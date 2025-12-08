@@ -4,30 +4,70 @@ StreamVLN Trajectory Data Analysis Report
 
 R2R 数据集:
   总轨迹数: 3,603
+  不同场景数: 61
   完整轨迹数: 3,603
   数据完整率: 100.00%
   平均动作序列长度: 60.89
   总指令数: 10,819
   平均每条轨迹指令数: 3.00
+  场景列表: 17DRP5sb8fy, 1LXtFkjw3qL, 1pXnuDYAj8r, 29hnd4uzFmX, 2n8kARJN3HM, 5LpN3gDmAk7, 5q7pvUzZiYa, 759xd9YjKW5, 7y3sRwLe3Va, 82sE5b5pLXE ... (共61个场景)
+  Top 10 场景 (按episode数量):
+    1. 8WUmhLawc2A: 93 episodes
+    2. JeFG25nYj2p: 93 episodes
+    3. r47D5H71a5s: 93 episodes
+    4. ur6pFq6Qu1A: 93 episodes
+    5. Vvot9Ly1tCj: 92 episodes
+    6. ac26ZMwG7aT: 91 episodes
+    7. 2n8kARJN3HM: 89 episodes
+    8. mJXqzFtmKg4: 89 episodes
+    9. E9uDoFAP3SH: 88 episodes
+    10. 1pXnuDYAj8r: 85 episodes
 
 RxR 数据集:
   总轨迹数: 6,634
+  不同场景数: 59
   完整轨迹数: 6,634
   数据完整率: 100.00%
   平均动作序列长度: 95.54
   总指令数: 19,894
   平均每条轨迹指令数: 3.00
+  场景列表: 17DRP5sb8fy, 1LXtFkjw3qL, 1pXnuDYAj8r, 29hnd4uzFmX, 2n8kARJN3HM, 5LpN3gDmAk7, 5q7pvUzZiYa, 759xd9YjKW5, 7y3sRwLe3Va, 82sE5b5pLXE ... (共59个场景)
+  Top 10 场景 (按episode数量):
+    1. E9uDoFAP3SH: 235 episodes
+    2. uNb9QFRL6hY: 231 episodes
+    3. 2n8kARJN3HM: 225 episodes
+    4. Vvot9Ly1tCj: 225 episodes
+    5. B6ByNegPMKs: 220 episodes
+    6. vyrNrziPKCB: 216 episodes
+    7. 5LpN3gDmAk7: 199 episodes
+    8. PX4nDJXEHrG: 199 episodes
+    9. gTV8FGcVJC9: 194 episodes
+    10. SN83YJsR3w2: 190 episodes
 
 EnvDrop 数据集:
   总轨迹数: 146,304
+  不同场景数: 60
   完整轨迹数: 146,304
   数据完整率: 100.00%
   平均动作序列长度: 68.58
   总指令数: 146,304
   平均每条轨迹指令数: 1.00
+  场景列表: 17DRP5sb8fy, 1LXtFkjw3qL, 1pXnuDYAj8r, 29hnd4uzFmX, 2n8kARJN3HM, 5LpN3gDmAk7, 5q7pvUzZiYa, 759xd9YjKW5, 7y3sRwLe3Va, 82sE5b5pLXE ... (共60个场景)
+  Top 10 场景 (按episode数量):
+    1. vyrNrziPKCB: 9726 episodes
+    2. E9uDoFAP3SH: 7433 episodes
+    3. PX4nDJXEHrG: 7294 episodes
+    4. B6ByNegPMKs: 6837 episodes
+    5. VzqfbhrpDEA: 6497 episodes
+    6. dhjEzFoUFzH: 6078 episodes
+    7. 2n8kARJN3HM: 5777 episodes
+    8. SN83YJsR3w2: 5645 episodes
+    9. Vvot9Ly1tCj: 5599 episodes
+    10. D7N2EKCX4Sj: 5142 episodes
 
 总体统计:
   总轨迹数: 156,541
+  总场景数: 61
   完整轨迹数: 156,541
   总体完整率: 100.00%
   总指令数: 177,017
