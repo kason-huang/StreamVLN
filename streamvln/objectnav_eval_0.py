@@ -191,15 +191,13 @@ class ObjectNavEvaluator:
         return -1
 
     def _configure_prompt(self) -> None:
-        # 使用与训练时完全相同的prompt模板
         prompt = (
-            "You are an object finding assistant. Your task is to <instruction>. "
-            "Devise an action sequence using the four actions: "
+            "<video>\n"
+            "You are an autonomous agent executing object navigation in HM3D.\n"
+            "Your task is to reach the goal object following the available actions: "
             "TURN LEFT (←) or TURN RIGHT (→) by 15 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
         )
         self.conversation = [{"from": "human", "value": prompt}, {"from": "gpt", "value": ""}]
-
-        # 保持与训练时相同的actions2idx映射
         self.actions2idx = OrderedDict(
             {
                 "STOP": [0],
@@ -208,8 +206,6 @@ class ObjectNavEvaluator:
                 "→": [3],
             }
         )
-
-        # 使用与训练时相同的conjunctions
         self.conjunctions = [
             "you can see ",
             "in front of you is ",
@@ -313,22 +309,6 @@ class ObjectNavEvaluator:
         actions = [self.actions2idx[match] for match in matches]
         return list(itertools.chain.from_iterable(actions))
 
-    def prepare_objectnav_conversation(self, conversation, instruction, add_memory=False):
-        """准备ObjectNav特定的对话格式，与训练时保持一致"""
-        sources = copy.deepcopy(conversation)
-
-        # 替换指令占位符
-        sources[0]["value"] = sources[0]["value"].replace("<instruction>", instruction)
-
-        # 添加历史观察
-        if add_memory:
-            sources[0]["value"] += f' These are your historical observations: {DEFAULT_MEMORY_TOKEN}.'
-
-        # 移除video token（如果存在）
-        sources[0]["value"] = sources[0]["value"].replace(DEFAULT_VIDEO_TOKEN + '\n', '')
-
-        return sources
-
     def preprocess_qwen(
         self,
         sources,
@@ -338,100 +318,6 @@ class ObjectNavEvaluator:
         system_message: str = "You are a helpful assistant.",
         add_system: bool = False,
     ):
-        """
-        与训练时保持一致的预处理方法，支持多模型版本
-        """
-        # 检测模型版本，使用对应的预处理函数
-        from llava import conversation as conversation_lib
-
-        # 如果是llama_v3版本，使用训练时的preprocess_llama3逻辑
-        if conversation_lib.default_conversation.version == "llama_v3":
-            return self.preprocess_llama3(sources, tokenizer, has_image, max_len, system_message, add_system)
-        else:
-            # 默认使用qwen预处理（保持原有逻辑作为备选）
-            return self.preprocess_qwen_impl(sources, tokenizer, has_image, max_len, system_message, add_system)
-
-    def preprocess_llama3(
-        self,
-        sources,
-        tokenizer: transformers.PreTrainedTokenizer,
-        has_image: bool = False,
-        max_len: int = 2048,
-        system_message: str = "You are a helpful language and vision assistant. You are able to understand the visual content that the user provides, and assist the user with a variety of tasks using natural language.",
-        add_system: bool = False,
-    ):
-        """与训练时完全一致的llama3预处理函数"""
-        roles = {"human": "user", "gpt": "assistant"}
-
-        # 复用tokenizer处理逻辑
-        tokenizer = copy.deepcopy(tokenizer)
-        if has_image:
-            tokenizer.add_tokens(["<image>"], special_tokens=True)
-            tokenizer.add_tokens(["<memory>"], special_tokens=True)
-
-        image_token_index = tokenizer.convert_tokens_to_ids("<image>")
-        memory_token_index = tokenizer.convert_tokens_to_ids("<memory>")
-        bos_token_id = tokenizer.convert_tokens_to_ids("<|begin_of_text|>")
-        start_header_id = tokenizer.convert_tokens_to_ids("<|start_header_id|>")
-        end_header_id = tokenizer.convert_tokens_to_ids("<|end_header_id|>")
-        eot_id = tokenizer.convert_tokens_to_ids("<|eot_id|>")
-
-        unmask_tokens = ["<|begin_of_text|>", "<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>", "\n\n"]
-        unmask_tokens_idx = [tokenizer.convert_tokens_to_ids(tok) for tok in unmask_tokens]
-
-        nl_tokens = tokenizer.convert_tokens_to_ids("\n\n")
-
-        # 应用prompt模板
-        input_ids = []
-        conversations = []
-
-        for i, source in enumerate(sources):
-            if roles[source[0]["from"]] != roles["human"]:
-                source = source[1:]
-
-            tokens = []
-
-            # 构建系统消息
-            if add_system:
-                tokens += tokenizer.apply_chat_template([{"role" : "system", "content" : system_message}])
-
-            for conv in source:
-                try:
-                    role = conv["role"]
-                    content = conv["content"]
-                except:
-                    role = conv["from"]
-                    content = conv["value"]
-
-                role = roles.get(role, role)
-                conversations.append(content)
-
-                conv = [{"role" : role, "content" : content}]
-                encode_id = tokenizer.apply_chat_template(conv)[1:]  # 去掉bos token
-                tokens += encode_id
-
-            # 替换特殊token
-            for idx, token in enumerate(tokens):
-                if token == image_token_index:
-                    tokens[idx] = IMAGE_TOKEN_INDEX
-                if token == memory_token_index:
-                    tokens[idx] = MEMORY_TOKEN_INDEX
-
-            input_ids.append(tokens[:max_len])
-
-        input_ids = torch.tensor(input_ids, dtype=torch.long)
-        return input_ids, conversations
-
-    def preprocess_qwen_impl(
-        self,
-        sources,
-        tokenizer: transformers.PreTrainedTokenizer,
-        has_image: bool = False,
-        max_len: int = 2048,
-        system_message: str = "You are a helpful assistant.",
-        add_system: bool = False,
-    ):
-        """原有的qwen预处理实现，作为备选"""
         roles = {"human": "user", "gpt": "assistant"}
         tokenizer = copy.deepcopy(tokenizer)
         if has_image:
@@ -452,6 +338,11 @@ class ObjectNavEvaluator:
         conversations = []
         input_ids = []
         for source in sources:
+            prompt = random.choice(self.conjunctions) + DEFAULT_IMAGE_TOKEN
+            if len(source[0]["value"]) != 0:
+                source[0]["value"] += f" {prompt}."
+            else:
+                source[0]["value"] = f"{prompt}."
             if roles.get(source[0]["from"], roles["human"]) != roles["human"]:
                 source = source[1:]
 
@@ -632,30 +523,15 @@ class ObjectNavEvaluator:
                                 selected_time_ids = selected_indices
 
                             if output_ids is None:
-                                # 构建与训练时一致的指令
+                                sources = copy.deepcopy(self.conversation)
                                 if goal_description:
-                                    # 生成与训练时相似的指令格式
-                                    instruction_templates = [
-                                        f"Navigate to the {goal_description}.",
-                                        f"Find and move to the {goal_description}.",
-                                        f"Go to the {goal_description}.",
-                                        f"Walk towards the {goal_description}.",
-                                        f"Find the {goal_description} and stop there.",
-                                        f"Move to where the {goal_description} is located.",
-                                        f"Navigate to find the {goal_description}."
-                                    ]
-                                    # 随机选择一个指令（或固定使用第一个）
-                                    import random
-                                    instruction = instruction_templates[0]  # 可改为 random.choice(instruction_templates)
-                                else:
-                                    instruction = "Navigate to the target object."
-
-                                # 使用ObjectNav特定的对话处理方法
-                                sources = self.prepare_objectnav_conversation(
-                                    self.conversation,
-                                    instruction,
-                                    add_memory=(model_history > 0 and start_index > 0)
-                                )
+                                    sources[0]["value"] += f' The goal object category is "{goal_description}".'
+                                include_memory_token = model_history > 0 and start_index > 0
+                                if include_memory_token:
+                                    sources[0]["value"] += (
+                                        f" These are your historical observations {DEFAULT_MEMORY_TOKEN}."
+                                    )
+                                sources[0]["value"] = sources[0]["value"].replace(DEFAULT_VIDEO_TOKEN + "\n", "")
                                 add_system = True
                             else:
                                 sources = [{"from": "human", "value": ""}, {"from": "gpt", "value": ""}]
