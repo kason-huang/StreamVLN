@@ -102,7 +102,7 @@ class ObjectNavEvaluator:
         self.tokenizer = tokenizer
         prompt = "You are an object finding assistant. Your task is to <instruction>. Devise an action sequence using the four actions: TURN LEFT (←) or TURN RIGHT (→) by 15 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
 
-        self.conversation = [{"from": "human", "value": prompt}, {"from": "gpt", "value": answer}]
+        self.conversation = [{"from": "human", "value": prompt}, {"from": "gpt", "value": ""}]
         self.actions2idx = OrderedDict({
             'STOP': [0],
             "↑": [1],
