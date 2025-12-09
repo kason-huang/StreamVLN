@@ -62,3 +62,4 @@ habitat-lab
 __pycache__/
 /results/
 /wandb/
+/obj_data
