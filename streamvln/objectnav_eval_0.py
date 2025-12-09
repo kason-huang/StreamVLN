@@ -561,7 +561,7 @@ class ObjectNavEvaluator:
 
                             input_dict = dict_to_cuda(input_dict, self.device)
                             for key in ["images", "depths", "poses", "intrinsics"]:
-                                input_dict[key] = input_dict[key].to(torch.bfloat16)
+                                input_dict[key] = input_dict[key].to(torch.float16)
 
                             outputs = self.model.generate(
                                 **input_dict,
@@ -679,12 +679,12 @@ def eval():
     )
     config = transformers.AutoConfig.from_pretrained(args.model_path)
     model = StreamVLNForCausalLM.from_pretrained(
-        args.model_path,
-        attn_implementation="flash_attention_2",
-        torch_dtype=torch.bfloat16,
-        config=config,
-        low_cpu_mem_usage=False,
-    )
+                args.model_path,
+                attn_implementation="sdpa",
+                torch_dtype=torch.float16,
+                config=config,
+                low_cpu_mem_usage=False,
+                )
     model.model.num_history = args.num_history
     model.requires_grad_(False)
     model.to(local_rank)

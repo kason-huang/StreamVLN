@@ -47,5 +47,5 @@ habitat:
   dataset:
     type: ObjectNav-v1
     split: val
-    scenes_dir: data/scene_datasets/hm3d-0.1
-    data_path: data/datasets/objectnav_hm3d_v1/{split}/{split}.json.gz
+    scenes_dir: obj_data/scene_datasets
+    data_path: obj_data/task_datasets/hm3d_v2/{split}/{split}.json.gz
