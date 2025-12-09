@@ -676,19 +676,8 @@ class VLNActionDataset(Dataset):
                                 'ahead of you is ',
                                 'in your sight is '
                             ]
-        self.act_conjunctions = [
-                                    'and then ', 
-                                    'after that ', 
-                                    'next ', 
-                                    'the next action is ',
-                                    'followed by ', 
-                                    'leading to ', 
-                                    'continuing ',
-                                    'subsequently ', 
-                                    'proceeding to '
-                                ]
         
-        prompt = f"You are an autonomous navigation assistant. Your task is to <instruction>. Devise an action sequence to follow the instruction using the four actions: TURN LEFT (←) or TURN RIGHT (→) by 15 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
+        prompt = f"You are an object finding assistant. Your task is to <instruction>. Devise an action sequence to follow the instruction using the four actions: TURN LEFT (←) or TURN RIGHT (→) by 15 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
         answer = ""
         self.conversations = [{"from": "human", "value": prompt}, {"from": "gpt", "value": answer}]
 
