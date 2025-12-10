@@ -122,18 +122,25 @@ class ObjectNavEvaluator:
         self.num_future_steps = args.num_future_steps
         self.num_history = args.num_history
     
+    def article_for(self, word):
+        """根据单词的开头音素决定使用 a 还是 an"""
+        return 'an' if word[0].lower() in 'aeiou' else 'a'
+
     def generate_objectnav_instruction(self, object_category):
         """生成多样化的ObjectNav指令（每次返回一个随机指令）"""
+        # 根据物体名称决定冠词
+        article = self.article_for(object_category)
+
         templates = [
-            f"navigate to the {object_category}.",
-            f"find and move to the {object_category}.",
-            f"go to the {object_category}.",
-            f"Walk towards the {object_category}.",
-            f"Find the {object_category} and stop there.",
-            f"Move to where the {object_category} is located.",
-            f"Navigate to find the {object_category}."
+            f"navigate to {article} {object_category}.",
+            f"find and move to {article} {object_category}.",
+            f"go to {article} {object_category}.",
+            f"walk towards {article} {object_category}.",
+            f"find {article} {object_category} and stop there.",
+            f"move to where {article} {object_category} is located.",
+            f"navigate to find {article} {object_category}."
         ]
-        
+
         # 随机选择一个指令
         return random.choice(templates)
     
