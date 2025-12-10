@@ -125,9 +125,9 @@ class ObjectNavEvaluator:
     def generate_objectnav_instruction(self, object_category):
         """生成多样化的ObjectNav指令（每次返回一个随机指令）"""
         templates = [
-            f"Navigate to the {object_category}.",
-            f"Find and move to the {object_category}.",
-            f"Go to the {object_category}.",
+            f"navigate to the {object_category}.",
+            f"find and move to the {object_category}.",
+            f"go to the {object_category}.",
             f"Walk towards the {object_category}.",
             f"Find the {object_category} and stop there.",
             f"Move to where the {object_category} is located.",
@@ -199,6 +199,31 @@ class ObjectNavEvaluator:
         return transformation_matrix
 
     def config_env(self) -> Env:
+        with habitat.config.read_write(self.config):
+            self.config.habitat.dataset.split = self.split
+            measurement_cfg = self.config.habitat.task.measurements
+            measurement_cfg.update(
+                {
+                    "top_down_map": TopDownMapMeasurementConfig(
+                        map_padding=3,
+                        map_resolution=1024,
+                        draw_source=True,
+                        draw_border=True,
+                        draw_shortest_path=True,
+                        draw_view_points=True,
+                        draw_goal_positions=True,
+                        draw_goal_aabbs=False,
+                        fog_of_war=FogOfWarConfig(draw=True, visibility_dist=5.0, fov=90),
+                    ),
+                    "collisions": CollisionsMeasurementConfig(),
+                }
+            )
+            self.config.habitat.simulator.scene_dataset = "hm3d"
+            self.config.habitat.seed = self.args.seed          # global seed
+            self.config.habitat.simulator.seed = self.args.seed  # per-simulator seed
+            self.config.habitat.simulator.create_renderer = self.args.render
+            self.config.habitat.simulator.debug_render = self.args.render
+
         env = Env(config=self.config)
         # env.episodes = env.episodes[0:1]
         return env
@@ -344,7 +369,7 @@ class ObjectNavEvaluator:
                         
                         for key, value in input_dict.items():
                             if key in ['images', 'depths', 'poses', 'intrinsics']:
-                                input_dict[key] = input_dict[key].to(torch.bfloat16)
+                                input_dict[key] = input_dict[key].to(torch.float16)
                         
                         outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
                         
@@ -412,7 +437,7 @@ class ObjectNavEvaluator:
                     "os": metrics['oracle_success'],
                     "ne": metrics["distance_to_goal"],
                     "steps": step_id,
-                    "episode_instruction": episode_instruction
+                    "episode_instruction": instruction 
                 }
                 
                 with open(os.path.join(self.output_path, f'result.json'), 'a') as f:
@@ -534,8 +559,8 @@ def eval():
     parser.add_argument("--local_rank", default=0, type=int, help="node rank")
     parser.add_argument("--model_path", type=str, default="")
     parser.add_argument("--habitat_config_path", type=str, default='config/vln_r2r.yaml')
-    parser.add_argument("--eval_split", type=str, default='val_unseen')
-    parser.add_argument("--output_path", type=str, default='./results/val_unseen/streamvln')
+    parser.add_argument("--eval_split", type=str, default='val')
+    parser.add_argument("--output_path", type=str, default='./results/val/streamvln')
     parser.add_argument("--num_future_steps", type=int, default=4)
     parser.add_argument("--num_frames", type=int, default=32)
     parser.add_argument("--save_video", action="store_true", default=False)
@@ -555,20 +580,21 @@ def eval():
             help='Path to vision tower model (e.g., checkpoints/google/siglip-so400m-patch14-384)')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
+    parser.add_argument("--seed", default=0, type=int)
+    parser.add_argument("--render", action="store_true", default=False)
     
     args = parser.parse_args()
     init_distributed_mode(args)
     local_rank = args.local_rank
 
-    tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_path,
-                                                        model_max_length=args.model_max_length,
-                                                        padding_side="right")
-    
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        args.model_path, model_max_length=args.model_max_length, padding_side="right"
+    )
     config = transformers.AutoConfig.from_pretrained(args.model_path)
     model = StreamVLNForCausalLM.from_pretrained(
                 args.model_path,
-                attn_implementation="flash_attention_2",
-                torch_dtype=torch.bfloat16,
+                attn_implementation="sdpa",
+                torch_dtype=torch.float16,
                 config=config,
                 low_cpu_mem_usage=False,
                 )

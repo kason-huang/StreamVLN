@@ -15,7 +15,7 @@ habitat:
       shuffle: False
   simulator:
     forward_step_size: 0.25
-    turn_angle: 30
+    turn_angle: 15
     action_space_config: "v1"
     agents:
       main_agent:
@@ -45,6 +45,7 @@ habitat:
         type: SoftSPL
       oracle_success:
         type: OracleSuccess
+        # success_distance: 3.0
       oracle_navigation_error:
         type: OracleNavigationError
         

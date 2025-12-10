@@ -13,6 +13,58 @@
       }
     },
     {
+        "name": "torchrun: eval StreamVLN obj",
+        "type": "python",
+        "request": "launch",
+        // 关键点：用模块方式启动 torchrun
+        "module": "torch.distributed.run",
+        // 把 torchrun 的参数 + 你原本脚本参数都放到 args
+        "args": [
+            "--nproc_per_node=1",
+            "--standalone",
+            "${workspaceFolder}/streamvln/objectnav_eval.py",
+            "--model_path", "checkpoints/mengwei0427/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln",
+            "--habitat_config_path", "config/objectnav_hm3d.yaml",
+            "--output_path", "result/vals/obj_val_streamvln_1208"
+        ],
+        "console": "integratedTerminal",
+        "subProcess": true,
+        "justMyCode": false,
+        "redirectOutput": true,
+        "env": {
+            "HF_HUB_OFFLINE": "0",
+            "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:128,garbage_collection_threshold:0.6",
+            "PYTHONPATH": "${workspaceFolder}"
+        },
+        "cwd": "${workspaceFolder}"
+    },{
+        "name": "torchrun: eval StreamVLN vln",
+        "type": "python",
+        "request": "launch",
+        // 关键点：用模块方式启动 torchrun
+        "module": "torch.distributed.run",
+        // 把 torchrun 的参数 + 你原本脚本参数都放到 args
+        "args": [
+            "--nproc_per_node=1",
+            "--standalone",
+            "${workspaceFolder}/streamvln/streamvln_eval_v100_32g.py",
+            "--model_path", "checkpoints/mengwei0427/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln",
+            "--habitat_config_path", "config/vln_r2r.yaml",
+            "--eval_split", "val_seen",
+            "--output_path", "result/vals/_unssen_streamvln_1208"
+        ],
+        "console": "integratedTerminal",
+        "subProcess": true,
+        "justMyCode": false,
+        "redirectOutput": true,
+        "env": {
+            "HF_HUB_OFFLINE": "0",
+            "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:128,garbage_collection_threshold:0.6",
+            "PYTHONPATH": "${workspaceFolder}"
+        },
+        "cwd": "${workspaceFolder}"
+    },
+    {
         "name": "torchrun: Train StreamVLN finetune",
         "type": "python",
         "request": "launch",
