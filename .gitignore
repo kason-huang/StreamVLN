@@ -63,3 +63,4 @@ __pycache__/
 /results/
 /wandb/
 /obj_data
+/result/
