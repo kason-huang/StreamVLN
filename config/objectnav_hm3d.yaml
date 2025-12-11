@@ -1,0 +1,56 @@
+# @package _global_
+
+defaults:
+  - /habitat: habitat_config_base
+  - /habitat/task: objectnav
+  - /habitat/simulator/agents@habitat.simulator.agents.main_agent: rgbd_agent
+  - /habitat/dataset/objectnav: hm3d
+  - _self_
+
+habitat:
+  environment:
+    max_episode_steps: 500
+    iterator_options:
+      max_scene_repeat_steps: 50000
+      shuffle: False
+  simulator:
+    forward_step_size: 0.25
+    turn_angle: 15
+    action_space_config: "v1"
+    agents:
+      main_agent:
+        sim_sensors:
+          rgb_sensor:
+            width: 640
+            height: 480
+            hfov: 79
+          depth_sensor:
+            width: 640
+            height: 480
+            hfov: 79
+            min_depth: 0.0
+            max_depth: 10.0
+    habitat_sim_v0:
+      gpu_device_id: 0
+      allow_sliding: False
+  task:
+    measurements:
+      distance_to_goal:
+        distance_to: VIEW_POINTS
+      success:
+        success_distance: 1.0
+      spl:
+        type: SPL
+      soft_spl:
+        type: SoftSPL
+      oracle_success:
+        type: OracleSuccess
+        # success_distance: 3.0
+      oracle_navigation_error:
+        type: OracleNavigationError
+        
+  dataset:
+    type: ObjectNav-v1
+    split: val
+    scenes_dir: obj_data/scene_datasets
+    data_path: obj_data/task_datasets/hm3d_v2/{split}/{split}.json.gz
