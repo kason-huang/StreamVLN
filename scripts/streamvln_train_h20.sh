@@ -1,7 +1,8 @@
 #!/bin/bash
 export HF_HUB_OFFLINE=1
 export HF_HOME=$PWD/checkpoints/hf_home/
-export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:64,garbage_collection_threshold:0.6"
+export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:32,garbage_collection_threshold:0.6"
+export NCCL_NVLS_ENABLE=0
 export NCCL_IB_DISABLE=1
 export NCCL_P2P_DISABLE=1
 export NCCL_DEBUG=INFO
@@ -154,7 +155,7 @@ torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE \
     --fp16 True \
     --run_name $MID_RUN_NAME \
     --output_dir checkpoints/$MID_RUN_NAME \
-    --num_train_epochs 1 \
+    --num_train_epochs 2 \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 4 \
     --gradient_accumulation_steps 2 \
@@ -177,4 +178,4 @@ torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE \
     --torch_compile False \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
-    --report_to tensorboard 
+    --report_to tensorboard ; /usr/bin/shutdown

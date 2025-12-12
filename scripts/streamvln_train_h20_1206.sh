@@ -4,7 +4,7 @@ export HF_HOME=$PWD/checkpoints/hf_home/
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:64,garbage_collection_threshold:0.6"
 export NCCL_IB_DISABLE=1
 export NCCL_P2P_DISABLE=1
-# export NCCL_DEBUG=INFO
+export NCCL_DEBUG=INFO
 
 # Distributed training parameters
 NNODES=${NNODES:-1}                           # Number of nodes, default 1 (single node)
@@ -157,10 +157,10 @@ torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE \
     --num_train_epochs 1 \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 4 \
-    --gradient_accumulation_steps 4 \
+    --gradient_accumulation_steps 2 \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
-    --save_steps 2000 \
+    --save_steps 5000 \
     --save_total_limit 1 \
     --learning_rate 1e-5 \
     --mm_vision_tower_lr 2.5e-6 \
