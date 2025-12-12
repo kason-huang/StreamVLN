@@ -39,18 +39,6 @@ Thumbs.db
 
 # 数据文件
 ./data/
-*.h5
-*.hdf5
-*.pickle
-*.pkl
-*.json
-# 模型权重文件（如果有其他位置的模型文件）
-*.bin
-*.safetensors
-*.pt
-*.pth
-*.ckpt
-
 
 data_old
 habitat-lab
