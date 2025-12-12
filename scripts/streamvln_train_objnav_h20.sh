@@ -195,4 +195,4 @@ torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
     --report_to tensorboard  \
-    --attn_implementation "flash_attention_2"  > >(tee "$LOG_FILE_OUT") 2> >(tee "$LOG_FILE_ERR" >&2) 
+    --attn_implementation "flash_attention_2"
