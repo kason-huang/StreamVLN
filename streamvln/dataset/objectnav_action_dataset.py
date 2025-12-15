@@ -18,6 +18,7 @@ from llava.constants import IGNORE_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_
 from llava import conversation as conversation_lib
 from llava.mm_utils import tokenizer_image_token
 from llava.model import *
+import gzip
 
 from streamvln.utils.utils import DEFAULT_IMAGE_TOKEN, IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_MEMORY_TOKEN, MEMORY_TOKEN_INDEX
 from streamvln.args import DataArguments
@@ -604,14 +605,14 @@ def preprocess(sources: Sequence[str], tokenizer: transformers.PreTrainedTokeniz
         conversation = _add_speaker_and_signal(header, source)
         conversations.append(conversation)
 
-class VLNActionDataset(Dataset):
+class ObjNavActionDataset(Dataset):
     def __init__(
         self, 
         tokenizer,
         data_args, 
         task_id
     ):
-        super(VLNActionDataset, self).__init__()
+        super(ObjNavActionDataset, self).__init__()
 
         self.task_id = task_id
         self.image_size = data_args.image_size
@@ -626,24 +627,27 @@ class VLNActionDataset(Dataset):
 
         self.video_folder = data_args.video_folder.split(',')
 
-        self.nav_data =[]
-        for vf in self.video_folder:
-            anno_json = json.load(open(os.path.join(vf, 'annotations.json'), 'r'))
-            for tdata in anno_json:
-                tdata['video'] = os.path.join(vf, tdata['video'])
-            self.nav_data += anno_json
+        # ObjectNav数据路径
+        self.video_folder = getattr(data_args, 'objnav_video_folder', '').split(',')
+
+        # # 加载ObjectNav数据
+        self.nav_data = self.load_objectnav_data()
         
+        # 生成训练验本
         self.data_list = []
         for ep_id, item in enumerate(self.nav_data):
             instructions = item['instructions']
             actions = item['actions']
             actions_len = len(actions)
+
+            # delete the trajectory which too short
             if actions_len < 4:
                 continue
 
             if not isinstance(instructions, list):
                 instructions = [instructions]
                 
+            # generate sample for each instruction
             for ins_id in range(len(instructions)):
                 valid_idx = 0
                 if self.remove_init_turns:
@@ -654,11 +658,16 @@ class VLNActionDataset(Dataset):
                 if actions_len - valid_idx < 4:
                     continue
                 
+                # genenrate multi-turn dialogue sample
                 num_rounds = (actions_len - valid_idx) // self.num_frames
                 for n in range(num_rounds + 1):
                     if n * self.num_frames == actions_len - valid_idx:
                         continue
                     self.data_list.append((ep_id, ins_id, n * self.num_frames, valid_idx))
+        
+        print(f"Generated {len(self.data_list)} training samples from ObjectNav data")
+
+
 
         self.idx2actions = {
             '0': 'STOP',
@@ -687,14 +696,139 @@ class VLNActionDataset(Dataset):
                                     'subsequently ', 
                                     'proceeding to '
                                 ]
+        # ObjectNav任务特定的prompt
+        self.conversations = self.create_objectnav_conversations()
         
-        prompt = f"You are an autonomous navigation assistant. Your task is to <instruction>. Devise an action sequence to follow the instruction using the four actions: TURN LEFT (←) or TURN RIGHT (→) by 15 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
+    def create_objectnav_conversations(self):
+        """创建ObjectNav特定的对话模板"""
+        prompt = "You are an object finding assistant. Your task is to <instruction>. Devise an action sequence using the four actions: TURN LEFT (←) or TURN RIGHT (→) by 30 degrees, MOVE FORWARD (↑) by 25 centimeters, or STOP."
         answer = ""
-        self.conversations = [{"from": "human", "value": prompt}, {"from": "gpt", "value": answer}]
+        return [{"from": "human", "value": prompt}, {"from": "gpt", "value": answer}]
+
 
     def __len__(self):
         return len(self.data_list)
-    
+
+
+    def load_objectnav_data(self):
+        """加载ObjectNav格式的数据"""
+        nav_data = []
+
+        if not self.video_folder or not self.video_folder[0]:
+            print("Warning: No ObjectNav video folder specified")
+            return nav_data
+
+        for vf in self.video_folder:
+            if not vf.strip():
+                continue
+
+            # 查找annotations目录
+            annotations_dir = os.path.join(vf, 'annotations')
+            if not os.path.exists(annotations_dir):
+                print(f"Warning: ObjectNav annotations directory not found: {annotations_dir}")
+                continue
+
+            # 查找所有.json.gz文件
+            json_gz_files = []
+            for filename in os.listdir(annotations_dir):
+                if filename.endswith('.json.gz'):
+                    json_gz_files.append(filename)
+
+            if not json_gz_files:
+                print(f"Warning: No .json.gz files found in {annotations_dir}")
+                continue
+
+            print(f"Found {len(json_gz_files)} .json.gz files in {annotations_dir}")
+
+            # 加载所有.json.gz文件并合并数据
+            all_objectnav_data = []
+            for gz_file in sorted(json_gz_files):
+                gz_path = os.path.join(annotations_dir, gz_file)
+                scene_name = gz_file.replace('.json.gz', '')
+
+                try:
+                    with gzip.open(gz_path, 'rt', encoding='utf-8') as f:
+                        scene_data = json.load(f)
+
+                    # 为每个数据项添加场景名称信息
+                    if isinstance(scene_data, list):
+                        for item in scene_data:
+                            if isinstance(item, dict):
+                                item['scene_name'] = scene_name
+                        all_objectnav_data.extend(scene_data)
+                    else:
+                        # 如果是单个字典，包装成列表
+                        if isinstance(scene_data, dict):
+                            scene_data['scene_name'] = scene_name
+                        all_objectnav_data.append(scene_data)
+
+                    print(f"Loaded {len(scene_data) if isinstance(scene_data, list) else 1} episodes from scene {scene_name}")
+
+                except Exception as e:
+                    print(f"Error loading ObjectNav data from {gz_path}: {e}")
+                    continue
+
+            print(f"Total {len(all_objectnav_data)} ObjectNav episodes from {vf}")
+
+            # 转换数据格式
+            for item in all_objectnav_data:
+                converted_item = self.convert_objectnav_format(item, vf)
+                if converted_item:
+                    nav_data.append(converted_item)
+
+        print(f"Successfully loaded {len(nav_data)} ObjectNav episodes in total")
+        return nav_data
+
+
+    def convert_objectnav_format(self, item, base_path):
+        """转换ObjectNav数据为内部格式"""
+        try:
+            # 确保必要字段存在
+            required_fields = ['id', 'video', 'actions', 'object_category']
+            for field in required_fields:
+                if field not in item:
+                    print(f"Missing required field '{field}' in item {item.get('id', 'unknown')}")
+                    return None
+
+            # 动态生成多样化指令
+            object_category = item.get("object_category", "object")
+            instructions = self.generate_objectnav_instructions(object_category)
+            # instructions = item.get("instructions", "object")
+
+            return {
+                "id": item["id"],
+                "video": os.path.join(base_path, item["video"]),
+                "instructions": instructions,  # 动态生成的指令
+                "actions": item["actions"],  # 用户提供的actions
+                "object_category": object_category
+            }
+        except Exception as e:
+            print(f"Error converting ObjectNav item {item.get('id', 'unknown')}: {e}")
+            return None
+
+    def article_for(self, word):
+        """根据单词的开头音素决定使用 a 还是 an"""
+        return 'an' if word[0].lower() in 'aeiou' else 'a'
+
+    def generate_objectnav_instructions(self, object_category):
+        """生成多样化的ObjectNav指令（每次返回一个随机指令）"""
+        # 根据物体名称决定冠词
+        article = self.article_for(object_category)
+
+        templates = [
+            f"navigate to {article} {object_category}.",
+            f"find and move to {article} {object_category}.",
+            f"go to {article} {object_category}.",
+            f"walk towards {article} {object_category}.",
+            f"find {article} {object_category} and stop there.",
+            f"move to where {article} {object_category} is located.",
+            f"navigate to find {article} {object_category}."
+        ]
+
+        # 随机选择一个索引
+        idx = torch.randint(0, len(templates), ()).item()
+        return [templates[idx]]
+
     @property
     def task(self):
         return self.task_id
@@ -731,8 +865,11 @@ class VLNActionDataset(Dataset):
         return sources
     
     def __getitem__(self, i):
+        """获取单个训练样本"""
         ep_id, ins_id, start_idx, valid_idx = self.data_list[i]
         data = self.nav_data[ep_id]
+
+
         video_path = data['video']
         video_frames = sorted(os.listdir(os.path.join(video_path, 'rgb')))
 
@@ -740,22 +877,25 @@ class VLNActionDataset(Dataset):
         if not isinstance(instructions, list):
             instructions = [instructions]
 
-        actions = data['actions'][1+valid_idx:] + [0]
+        actions = data['actions'][1+valid_idx:] + [0] # 添加STOP动作
         actions_len = len(actions)
         time_ids = np.arange(start_idx, min(start_idx + self.num_frames, actions_len))
         assert len(time_ids) > 0
         actions = np.array(actions)[time_ids]
 
+        # 采样当前步骤的帧
         start_idx, end_idx, interval = time_ids[0]+valid_idx, time_ids[-1]+1+valid_idx, self.num_future_steps
         sample_step_ids = np.arange(start_idx, end_idx, interval, dtype=np.int32)
         sample_frames = [os.path.join(video_path, 'rgb', video_frames[i]) for i in sample_step_ids]
 
+         # 采样历史帧
         if time_ids[0] != 0:
             history_step_ids = np.arange(0+valid_idx, time_ids[0]+valid_idx, max(time_ids[0] // self.num_history, 1))
             history_frames = [os.path.join(video_path, 'rgb', video_frames[i]) for i in history_step_ids]
         else:
             history_frames = []
-            
+        
+        # 处理图像
         images = []
         for image_file in history_frames + sample_frames:
             image = Image.open(image_file).convert('RGB')
@@ -767,17 +907,21 @@ class VLNActionDataset(Dataset):
 
         images = torch.stack(images)
         
+        # 准备对话
         sources = copy.deepcopy(self.conversations)
+
+        # 从生成的指令中选择一个（模仿VLN的模式）
+        instructions = data.get("instructions", [])
+        instruction = instructions[ins_id % len(instructions)]  # 使用对应的指令
 
         if start_idx != 0:
             sources[0]["value"] += f' These are your historical observations: {DEFAULT_MEMORY_TOKEN}.'
         
-        sources[0]["value"] = sources[0]["value"].replace('<instruction>.', instructions[ins_id])
+        sources[0]["value"] = sources[0]["value"].replace('<instruction>.', instruction)
         interleave_sources = self.prepare_conversation(sources, list(actions))
         
         data_dict = preprocess([interleave_sources], self.tokenizer, True)
 
-        # print("vln_action_dataset: episode_id", data['id'])
         return data_dict["input_ids"][0], \
             data_dict["labels"][0], \
             images, \
