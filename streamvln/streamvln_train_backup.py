@@ -56,7 +56,7 @@ from streamvln.model.stream_video_vln import StreamVLNForCausalLM
 from streamvln.dataset.vln_action_dataset import collate_fn, VLNActionDataset
 from streamvln.dataset.mmc4_dataset import LazyMMC4Dataset
 
-from streamvln.dataset.objectnav_action_dataset import ObjNavActionDataset
+from streamvln.dataset.objectnav_action_dataset import ObjNavActionDataset, objectnav_collate_fn
 
 
 from streamvln.utils.utils import ANSWER_LIST, DEFAULT_IMAGE_TOKEN, IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_MEMORY_TOKEN, MEMORY_TOKEN_INDEX, DEFAULT_VIDEO_TOKEN
@@ -1440,25 +1440,8 @@ class DataCollatorForSupervisedDataset(object):
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,vision_tower, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     
-    dataset = []
-
-    # Support for VLN dataset (optional)
-    if data_args.video_folder is not None:
-        nav_dataset = VLNActionDataset(tokenizer=tokenizer, data_args=data_args, task_id=0)
-        dataset.append(nav_dataset)
-        rank0_print(f"Loaded VLN dataset from {data_args.video_folder}")
-    else:
-        rank0_print("VLN dataset not loaded (video_folder is None)")
-
-    # Support for Object Navigation dataset (optional)
-    if data_args.objnav_video_folder is not None:
-        objnav_data_args = copy.deepcopy(data_args)
-        objnav_data_args.video_folder = data_args.objnav_video_folder
-        objnav_dataset = ObjNavActionDataset(tokenizer=tokenizer, data_args=objnav_data_args, task_id=4)
-        dataset.append(objnav_dataset)
-        rank0_print(f"Loaded ObjectNav dataset from {data_args.objnav_video_folder}")
-    else:
-        rank0_print("ObjectNav dataset not loaded (objnav_video_folder is None)")
+    nav_dataset = VLNActionDataset(tokenizer=tokenizer, data_args=data_args, task_id=0)
+    dataset =[nav_dataset]
     
     if data_args.multi_task_training:
         QA_data_agrs = copy.deepcopy(data_args)

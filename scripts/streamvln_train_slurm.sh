@@ -57,10 +57,10 @@ srun torchrun --nnodes=$SLURM_NNODES --nproc_per_node=8 \
     --evaluation_strategy "no" \
     --save_strategy "epoch" \
     --save_total_limit 1 \
-    --learning_rate 2e-5 \
-    --mm_vision_tower_lr 5e-6 \
+    --learning_rate 1e-5 \
+    --mm_vision_tower_lr 2.5e-6 \
     --weight_decay 0. \
-    --warmup_ratio 0.075 \
+    --warmup_ratio 0.1 \
     --lr_scheduler_type "cosine_with_min_lr" \
     --lr_scheduler_kwargs '{"min_lr": 1.85e-05}' \
     --logging_steps 10 \
