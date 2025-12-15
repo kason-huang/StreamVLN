@@ -2,6 +2,8 @@ import os
 import torch
 import torch.nn as nn
 import datetime
+import glob
+import shutil
 
 from accelerate import Accelerator
 from accelerate.utils import InitProcessGroupKwargs, GradientAccumulationPlugin
@@ -472,6 +474,29 @@ class LLaVATrainer(Trainer):
         return self.optimizer
 
     def _save_checkpoint(self, model, trial, metrics=None):
+        # 先删除掉之前的那些的占用大空间的
+        # 获取所有 checkpoint-* 目录（HF 标准命名）
+        ckpt_dirs = sorted(
+            [d for d in glob.glob(os.path.join(self.args.output_dir, "checkpoint-*")) if os.path.isdir(d)],
+            key=lambda x: int(x.split("-")[-1])
+        )
+        
+        if len(ckpt_dirs) <= 1:
+            return
+
+        old_ckpts = ckpt_dirs[:-1]
+
+        for ckpt in old_ckpts:
+            # 查找该 checkpoint 目录下的 global_step* 子目录
+            global_step_dirs = glob.glob(os.path.join(ckpt, "global_step*"))
+            for gs_dir in global_step_dirs:
+                if os.path.isdir(gs_dir):
+                    print(f"[Cleanup] Removing global_step dir: {gs_dir}")
+                    try:
+                        shutil.rmtree(gs_dir)
+                    except Exception as e:
+                        print(f"  Failed to remove {gs_dir}: {e}")
+        
         if getattr(self.args, "tune_mm_mlp_adapter", False) or (
             hasattr(self.args, "mm_tunable_parts") and (len(self.args.mm_tunable_parts.split(",")) == 1 and ("mm_mlp_adapter" in self.args.mm_tunable_parts or "mm_vision_resampler" in self.args.mm_tunable_parts))
         ):

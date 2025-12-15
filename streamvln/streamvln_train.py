@@ -1585,31 +1585,6 @@ def get_model(model_args, training_args, data_args, bnb_model_from_pretrained_ar
     
     return model
 
-class CleanupOldCheckpointGlobalStepDirs(TrainerCallback):
-    def on_save(self, args, state, control, **kwargs):
-        # 获取所有 checkpoint-* 目录（HF 标准命名）
-        ckpt_dirs = sorted(
-            [d for d in glob.glob(os.path.join(args.output_dir, "checkpoint-*")) if os.path.isdir(d)],
-            key=lambda x: int(x.split("-")[-1])
-        )
-        
-        if len(ckpt_dirs) <= 1:
-            return
-
-        latest = ckpt_dirs[-1]
-        old_ckpts = ckpt_dirs[:-1]
-
-        for ckpt in old_ckpts:
-            # 查找该 checkpoint 目录下的 global_step* 子目录
-            global_step_dirs = glob.glob(os.path.join(ckpt, "global_step*"))
-            for gs_dir in global_step_dirs:
-                if os.path.isdir(gs_dir):
-                    print(f"[Cleanup] Removing global_step dir: {gs_dir}")
-                    try:
-                        shutil.rmtree(gs_dir)
-                    except Exception as e:
-                        print(f"  Failed to remove {gs_dir}: {e}")
-
 def train(attn_implementation=None):
     global local_rank
     # torch.autograd.set_detect_anomaly(True)
@@ -1911,8 +1886,8 @@ def train(attn_implementation=None):
                 return wrap_func
             FSDP.__init__ = patch_FSDP_use_orig_params(FSDP.__init__)
     
-    
-    trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, callbacks=[CleanupOldCheckpointGlobalStepDirs()], **data_module)
+
+    trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args,**data_module)
     # print(list(model.get_model().vision_resampler.parameters())[0])
     # import ipdb; ipdb.set_trace()
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
