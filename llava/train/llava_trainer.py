@@ -495,27 +495,28 @@ class LLaVATrainer(Trainer):
                 self.model.config.save_pretrained(output_dir)
                 torch.save(weight_to_save, os.path.join(output_dir, f"mm_projector.bin"))
         else:
-            # 先删除掉之前的那些的占用大空间的
-            # 获取所有 checkpoint-* 目录（HF 标准命名）
-            ckpt_dirs = sorted(
-                [d for d in glob.glob(os.path.join(self.args.output_dir, "checkpoint-*")) if os.path.isdir(d)],
-                key=lambda x: int(x.split("-")[-1])
-            )
-            
-            if len(ckpt_dirs) <= 0:
-                return
+            # 只在主进程上执行保存操作（rank0其实就是等于非单卡而且是多卡的0号）
+            if self.args.local_rank == 0 or self.args.local_rank == -1:
+                # 先删除掉之前的那些的占用大空间的,主要是global_step目录
+                # 获取所有 checkpoint-* 目录（HF 标准命名）
+                ckpt_dirs = sorted(
+                    [d for d in glob.glob(os.path.join(self.args.output_dir, "checkpoint-*")) if os.path.isdir(d)],
+                    key=lambda x: int(x.split("-")[-1])
+                )
+                
+                if len(ckpt_dirs) > 0:
+                    # 这是最新的
+                    ckpt = ckpt_dirs[-1]
 
-            ckpt = ckpt_dirs[-1]
-
-            # 查找该 checkpoint 目录下的 global_step* 子目录
-            global_step_dirs = glob.glob(os.path.join(ckpt, "global_step*"))
-            for gs_dir in global_step_dirs:
-                if os.path.isdir(gs_dir):
-                    print(f"[Cleanup] Removing global_step dir: {gs_dir}")
-                    try:
-                        shutil.rmtree(gs_dir)
-                    except Exception as e:
-                        print(f"  Failed to remove {gs_dir}: {e}")
+                    # 查找该 checkpoint 目录下的 global_step* 子目录
+                    global_step_dirs = glob.glob(os.path.join(ckpt, "global_step*"))
+                    for gs_dir in global_step_dirs:
+                        if os.path.isdir(gs_dir):
+                            print(f"[Cleanup] Removing global_step dir: {gs_dir}")
+                            try:
+                                shutil.rmtree(gs_dir)
+                            except Exception as e:
+                                print(f"  Failed to remove {gs_dir}: {e}")
             super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):

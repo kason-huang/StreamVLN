@@ -91,7 +91,7 @@
         },
         "cwd": "${workspaceFolder}"
     },{
-        "name": "torchrun: Train StreamVLN finetune Obj (4 GPUs)",
+        "name": "torchrun: Train StreamVLN finetune All (4 GPUs)",
         "type": "python",
         "request": "launch",
         // 关键点：用模块方式启动 torchrun
@@ -108,9 +108,9 @@
             "--deepspeed", "${workspaceFolder}/scripts/zero2.json",
             "--model_name_or_path", "checkpoints/lmms-lab/LLaVA-Video-7B-Qwen2",
             "--version", "qwen_1_5",
-            "--objnav_video_folder", "data/test_object_datasets",
+            // "--objnav_video_folder", "data/test_object_datasets",
             // // "--video_folder", "data/test_object_datasets",
-            // "--video_folder", "data/trajectory_data/R2R_small_1118",
+            "--video_folder", "data/trajectory_data/R2R_small_1118",
             "--group_by_task", "False",
             "--num_history", "8",
             "--num_future_steps", "4",
@@ -133,8 +133,8 @@
             "--gradient_accumulation_steps", "2",
             "--evaluation_strategy", "no",
             "--save_strategy", "steps",
-            "--save_steps", "20",
-            "--save_total_limit", "1",
+            "--save_steps", "10",
+            "--save_total_limit", "2",
             "--learning_rate", "2e-5",
             "--mm_vision_tower_lr", "5e-6",
             "--weight_decay", "0.",
