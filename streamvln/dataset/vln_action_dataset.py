@@ -632,7 +632,7 @@ class VLNActionDataset(Dataset):
 
         self.video_folder = data_args.video_folder.split(',')
 
-        self.nav_data = self.load_vln_data()
+        self.nav_data = self.load_vln_data(data_args)
         
         self.data_list = []
         for ep_id, item in enumerate(self.nav_data):
@@ -700,12 +700,12 @@ class VLNActionDataset(Dataset):
     def task(self):
         return self.task_id
     
-    def load_vln_data(self):
+    def load_vln_data(self, data_args):
         """Load VLN navigation data from different sources."""
         nav_data = []
 
         # Check if dataset_source is specified and equals 'cloudrobo'
-        dataset_source = getattr(self.data_args, 'dataset_source', None)
+        dataset_source = getattr(data_args, 'dataset_source', None)
 
         if dataset_source == 'cloudrobo':
             # Load from cloudrobo format: episode_num_* directories with annotations/*.json.gz files
@@ -724,9 +724,10 @@ class VLNActionDataset(Dataset):
                         for json_file in json_files:
                             # Read and decompress the JSON file
                             with gzip.open(json_file, 'rt') as f:
-                                tdata = json.load(f)
-                                tdata['video'] = os.path.join(episode_dir, tdata['video'])
-                            nav_data.append(tdata)
+                                anno_json = json.load(f)
+                                for tdata in anno_json:
+                                    tdata['video'] = os.path.join(episode_dir, tdata['video'])
+                            nav_data += anno_json
         else:
             # Original logic: load annotations.json from each video folder
             for vf in self.video_folder:
