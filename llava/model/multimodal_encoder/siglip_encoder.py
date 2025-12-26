@@ -194,6 +194,12 @@ class SigLipAttention(nn.Module):
         self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
         self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
 
+        self.quant_bits = os.environ.get('QUANTIZATION_BITS')
+        if self.quant_bits is not None:
+            # 可以在这里打印或做其他处理
+            print(f"[SigLipAttention] Running with {self.quant_bits}-bit quantization")
+
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -223,8 +229,11 @@ class SigLipAttention(nn.Module):
                 raise ValueError(f"Attention mask should be of size {(batch_size, 1, q_len, k_v_seq_len)}, but is {attention_mask.size()}")
             attn_weights = attn_weights + attention_mask
 
-        # upcast attention to fp32
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        # upcast attention to fp32, if quantinization, no change
+        if self.quant_bits is not None:
+            attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        else:
+            attn_weights = nn.functional.softmax(attn_weights, dim=-1).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
 
