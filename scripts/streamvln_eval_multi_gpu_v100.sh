@@ -1,5 +1,5 @@
 export MAGNUM_LOG=quiet HABITAT_SIM_LOG=quiet
-export HF_HUB_OFFLINE=1
+export HF_HUB_OFFLINE=0
 export VISION_MODEL_VERSION="checkpoints/google/siglip-so400m-patch14-384"
 MASTER_PORT=$((RANDOM % 101 + 20000))
 
@@ -13,8 +13,8 @@ torchrun --nproc_per_node=4 \
     --habitat_config_path "config/vln_r2r.yaml" \
     --eval_split "val_unseen" \
     --output_path "results/vals/_unseen/streamvln" \
-    --vision_tower_path $VISION_MODEL_VERSION \
     --quantization_bits 4
+    # --vision_tower_path $VISION_MODEL_VERSION \
     # --num_future_steps 4 \
     # --num_frames 32 \
     # --num_history 8 \
