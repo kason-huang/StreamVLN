@@ -11,7 +11,8 @@ import gzip
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 
-from typing import Dict, Optional, Sequence, List
+from typing import Dict, Optional, Sequence, List, Any
+from pathlib import Path
 from PIL import Image
 from packaging import version
 
@@ -607,7 +608,172 @@ def preprocess(sources: Sequence[str], tokenizer: transformers.PreTrainedTokeniz
         conversations.append(conversation)
 
 
+class LeRobotVLNDataLoader:
+    """从 LeRobot 格式数据集加载 VLN 数据，支持多数据集合并。"""
 
+    def __init__(self, roots: str):
+        """
+        Args:
+            roots: 逗号分隔的 LeRobot 数据集根目录列表
+        """
+        from vlnce2lerobot_v2 import NavDataset
+
+        # 解析多个根目录
+        root_dirs = [r.strip() for r in roots.split(',') if r.strip()]
+
+        self.datasets: List[NavDataset] = []
+        self.dataset_configs: List[Dict] = []
+
+        for root_dir in root_dirs:
+            root_path = Path(root_dir)
+
+            # 检查目录是否存在
+            if not root_path.exists():
+                raise ValueError(f"LeRobot dataset root not found: {root_dir}")
+
+            # 尝试从 info.json 读取 repo_id
+            info_path = root_path / "meta" / "info.json"
+            if info_path.exists():
+                with open(info_path, 'r') as f:
+                    info = json.load(f)
+                    repo_id = info.get("repo_id", root_path.name)
+            else:
+                repo_id = root_path.name
+
+            # 加载数据集
+            dataset = NavDataset(repo_id=repo_id, root=root_path)
+            self.datasets.append(dataset)
+            self.dataset_configs.append({
+                'repo_id': repo_id,
+                'root': root_path,
+                'dataset': dataset
+            })
+
+        # 建立全局 episode 索引映射
+        self._build_episode_index_mapping()
+
+        print(f"[LeRobotVLNDataLoader] Loaded {len(self.datasets)} dataset(s):")
+        for config in self.dataset_configs:
+            print(f"  - {config['repo_id']}: {len(config['dataset'].episodes)} episodes")
+        print(f"[LeRobotVLNDataLoader] Total episodes: {self.total_episodes}")
+
+    def _build_episode_index_mapping(self):
+        """建立全局 episode 索引到具体 dataset 的映射"""
+        self.episode_mapping = {}  # {global_ep_idx: (dataset_idx, local_ep_idx)}
+        global_idx = 0
+
+        for ds_idx, config in enumerate(self.dataset_configs):
+            dataset = config['dataset']
+            for local_ep_idx in range(len(dataset.episodes)):
+                self.episode_mapping[global_idx] = (ds_idx, local_ep_idx)
+                global_idx += 1
+
+        self.total_episodes = global_idx
+
+    def get_all_episodes(self) -> List[Dict[str, Any]]:
+        """
+        获取所有 episode 数据，统一转换为原始格式。
+
+        Returns:
+            List of episode dictionaries in original format:
+            {
+                'id': str,
+                'video': str,
+                'actions': List[int],
+                'instructions': List[str],
+                'source_dataset': str  # 额外字段：标记来源数据集
+            }
+        """
+        episodes = []
+        for global_ep_idx in range(self.total_episodes):
+            ep_data = self.get_episode(global_ep_idx)
+            episodes.append(ep_data)
+        return episodes
+
+    def get_episode(self, global_ep_idx: int) -> Dict[str, Any]:
+        """
+        获取指定 episode 的数据（统一转换为原始格式）。
+
+        Args:
+            global_ep_idx: 全局 episode 索引
+
+        Returns:
+            Episode dictionary in original format
+        """
+        if global_ep_idx not in self.episode_mapping:
+            raise IndexError(f"Episode index {global_ep_idx} out of range")
+
+        ds_idx, local_ep_idx = self.episode_mapping[global_ep_idx]
+        config = self.dataset_configs[ds_idx]
+        dataset = config['dataset']
+
+        # 获取该 episode 的所有帧
+        frames = []
+        for i in range(len(dataset)):
+            sample = dataset[i]
+            if sample["episode_index"].item() == local_ep_idx:
+                frames.append(sample)
+
+        if not frames:
+            raise ValueError(f"No frames found for episode {global_ep_idx}")
+
+        # 解析 instruction
+        task_str = frames[0]["task"]
+        if isinstance(task_str, str):
+            task_dict = json.loads(task_str)
+            instruction = task_dict.get("instruction", task_str)
+        else:
+            instruction = str(task_str)
+
+        # 提取 actions
+        actions = [int(f["action"].item()) for f in frames]
+
+        # 获取 video_path（用于加载图像）
+        video_path = str(
+            config['root'] /
+            dataset.meta.get_video_file_path(local_ep_idx, "observation.images.rgb")
+        )
+
+        return {
+            'id': f"{config['repo_id']}_{local_ep_idx}",
+            'video': video_path,
+            'actions': actions,
+            'instructions': [instruction],
+            'source_dataset': config['repo_id']  # 额外字段
+        }
+
+    def get_video_frames_list(self, global_ep_idx: int) -> List[str]:
+        """
+        获取指定 episode 的所有图像文件路径列表（排序后）。
+
+        Args:
+            global_ep_idx: 全局 episode 索引
+
+        Returns:
+            List of image file paths
+        """
+        if global_ep_idx not in self.episode_mapping:
+            raise IndexError(f"Episode index {global_ep_idx} out of range")
+
+        ds_idx, local_ep_idx = self.episode_mapping[global_ep_idx]
+        config = self.dataset_configs[ds_idx]
+        dataset = config['dataset']
+
+        video_dir = Path(
+            config['root'] /
+            dataset.meta.get_video_file_path(local_ep_idx, "observation.images.rgb")
+        )
+
+        if not video_dir.exists():
+            raise FileNotFoundError(f"Video directory not found: {video_dir}")
+
+        # 获取所有 jpg 文件并按文件名（数字）排序
+        img_files = sorted(
+            video_dir.glob("*.jpg"),
+            key=lambda x: int(x.stem) if x.stem.isdigit() else 0
+        )
+
+        return [str(f) for f in img_files]
 
 
 class VLNActionDataset(Dataset):
@@ -630,9 +796,26 @@ class VLNActionDataset(Dataset):
         self.num_future_steps = data_args.num_future_steps
         self.remove_init_turns = data_args.remove_init_turns
 
-        self.video_folder = data_args.video_folder.split(',')
+        # ========== 新增：数据集格式检测 ==========
+        self.dataset_format = getattr(data_args, 'dataset_format', 'original')
 
-        self.nav_data = self.load_vln_data(data_args)
+        # ========== 修改：根据格式加载数据 ==========
+        if self.dataset_format == 'lerobot':
+            # LeRobot 格式
+            lerobot_roots = getattr(data_args, 'lerobot_roots', None)
+            if not lerobot_roots:
+                raise ValueError(
+                    "lerobot_roots must be provided when dataset_format='lerobot'. "
+                    "Example: --lerobot_roots /path/r2r,/path/rxr"
+                )
+            self.lerobot_loader = LeRobotVLNDataLoader(roots=lerobot_roots)
+            self.nav_data = self.lerobot_loader.get_all_episodes()
+            self.video_folder = []  # LeRobot 格式不需要 video_folder
+        else:
+            # 原始格式
+            self.lerobot_loader = None
+            self.video_folder = data_args.video_folder.split(',')
+            self.nav_data = self.load_vln_data(data_args)
         
         self.data_list = []
         for ep_id, item in enumerate(self.nav_data):
@@ -774,8 +957,16 @@ class VLNActionDataset(Dataset):
     def __getitem__(self, i):
         ep_id, ins_id, start_idx, valid_idx = self.data_list[i]
         data = self.nav_data[ep_id]
-        video_path = data['video']
-        video_frames = sorted(os.listdir(os.path.join(video_path, 'rgb')))
+
+        # ========== 修改：支持 LeRobot 格式的图像加载 ==========
+        if self.dataset_format == 'lerobot' and self.lerobot_loader is not None:
+            # LeRobot 格式：直接获取排序后的图像文件列表
+            video_frames = self.lerobot_loader.get_video_frames_list(ep_id)
+            video_path = data['video']  # 图像目录路径
+        else:
+            # 原始格式：从 video_path/rgb 目录读取
+            video_path = data['video']
+            video_frames = sorted(os.listdir(os.path.join(video_path, 'rgb')))
 
         instructions = data.get("instructions", None)
         if not isinstance(instructions, list):
@@ -789,11 +980,21 @@ class VLNActionDataset(Dataset):
 
         start_idx, end_idx, interval = time_ids[0]+valid_idx, time_ids[-1]+1+valid_idx, self.num_future_steps
         sample_step_ids = np.arange(start_idx, end_idx, interval, dtype=np.int32)
-        sample_frames = [os.path.join(video_path, 'rgb', video_frames[i]) for i in sample_step_ids]
+
+        # ========== 修改：根据格式构造完整图像路径 ==========
+        if self.dataset_format == 'lerobot' and self.lerobot_loader is not None:
+            # LeRobot: video_frames 已经是完整路径
+            sample_frames = [video_frames[i] for i in sample_step_ids]
+        else:
+            # 原始格式: 需要拼接 video_path/rgb/
+            sample_frames = [os.path.join(video_path, 'rgb', video_frames[i]) for i in sample_step_ids]
 
         if time_ids[0] != 0:
             history_step_ids = np.arange(0+valid_idx, time_ids[0]+valid_idx, max(time_ids[0] // self.num_history, 1))
-            history_frames = [os.path.join(video_path, 'rgb', video_frames[i]) for i in history_step_ids]
+            if self.dataset_format == 'lerobot' and self.lerobot_loader is not None:
+                history_frames = [video_frames[i] for i in history_step_ids]
+            else:
+                history_frames = [os.path.join(video_path, 'rgb', video_frames[i]) for i in history_step_ids]
         else:
             history_frames = []
             

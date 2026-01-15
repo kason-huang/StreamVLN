@@ -96,6 +96,16 @@ class DataArguments:
     image_size: Optional[int] = field(default=384)
     remove_init_turns: Optional[bool] = field(default=False)
 
+    # LeRobot dataset format support
+    dataset_format: str = field(
+        default="original",
+        metadata={"help": "Dataset format: 'original' or 'lerobot'"}
+    )
+    lerobot_roots: str = field(
+        default=None,
+        metadata={"help": "LeRobot dataset root directories, comma-separated. Example: /path/r2r,/path/rxr"}
+    )
+
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
