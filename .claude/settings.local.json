@@ -18,7 +18,11 @@
       "Bash(done)",
       "Bash(wc:*)",
       "Bash(python:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "mcp__context7__query-docs",
+      "mcp__web-reader__webReader",
+      "WebSearch",
+      "Bash(pip show:*)"
     ],
     "deny": [],
     "ask": []
