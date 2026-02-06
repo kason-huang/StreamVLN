@@ -616,7 +616,7 @@ class LeRobotVLNDataLoader:
         Args:
             roots: 逗号分隔的 LeRobot 数据集根目录列表
         """
-        from vlnce2lerobot_v2 import NavDataset
+        from streamvln.dataset.lerobot_dataset import NavDataset
 
         # 解析多个根目录
         root_dirs = [r.strip() for r in roots.split(',') if r.strip()]
