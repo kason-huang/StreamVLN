@@ -172,6 +172,35 @@
             "NCCL_NVLS_ENABLE": "0"
         },
         "cwd": "${workspaceFolder}"
+    },
+    {
+        "name": "Python: Verify LeRobot Dataset",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/scripts/verify_lerobot_dataset.py",
+        "args": [
+            "--repo_id", "streamvln/r2r_navigation",
+            "--root", "./data/lerobot",
+            "--verbose"
+        ],
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "env": {
+            "PYTHONPATH": "${workspaceFolder}"
+        }
+    },
+    {
+        "name": "Python: Verify LeRobot Dataset 111",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/scripts/verify_lerobot_dataset.py",
+        "args": [
+        ],
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "env": {
+            "PYTHONPATH": "${workspaceFolder}"
+        }
     }
 ]
 }
