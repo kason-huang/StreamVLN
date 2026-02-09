@@ -22,7 +22,7 @@ print("Test 1: Direct LeRobot Dataset Loading")
 print("=" * 60)
 
 try:
-    from streamvln.dataset.lerobot_action_dataset import LeRobotActionDataset
+    from lerobot_dataset import LeRobotActionDataset
 
     # The dataset is at ./data/lerobot/ directly, so use root="./data" and repo_id="lerobot"
     dataset = LeRobotActionDataset(
