@@ -85,7 +85,8 @@ class GaussianSplattingRGBSensor(Sensor):
         print("Loading new 3dgs scene:", scene_name)
 
         splat_ply_path = os.path.join(
-            self.scene_base_path,
+            # self.scene_base_path,
+            "data/scene_datasets/reconstruction",
             scene_name,
             "semantic",
             "splat.semantic.ply"
@@ -94,7 +95,8 @@ class GaussianSplattingRGBSensor(Sensor):
             raise FileNotFoundError(f"PLY file not found: {splat_ply_path}")
 
         habitat_transform_path = os.path.join(
-            self.scene_base_path,
+            # self.scene_base_path,
+            "data/scene_datasets/reconstruction",
             scene_name,
             "anno_res",
             "to_habitat.txt"
@@ -103,7 +105,8 @@ class GaussianSplattingRGBSensor(Sensor):
             raise FileNotFoundError(f"To habitat file not found: {habitat_transform_path}")
 
         floor_transform_path = os.path.join(
-            self.scene_base_path,
+            # self.scene_base_path,
+            "data/scene_datasets/reconstruction",
             scene_name,
             "anno_res",
             "floor_transform.txt"
@@ -112,7 +115,8 @@ class GaussianSplattingRGBSensor(Sensor):
             raise FileNotFoundError(f"Floor transform file not found: {floor_transform_path}")
 
         anno_res_dir = os.path.join(
-            self.scene_base_path,
+            # self.scene_base_path,
+            "data/scene_datasets/reconstruction",
             scene_name,
             "anno_res"
         )

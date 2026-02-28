@@ -5,6 +5,8 @@ defaults:
   - /habitat/task: objectnav
   - /habitat/simulator/agents@habitat.simulator.agents.main_agent: rgbd_agent
   - /habitat/dataset/objectnav: hm3d
+  - /habitat/task/lab_sensors:
+    - gaussian_splatting_rgb_sensor
   - _self_
 
 habitat:
@@ -34,7 +36,6 @@ habitat:
   task:
     lab_sensors:
       gaussian_splatting_rgb_sensor:
-        type: "GaussianSplattingRGBSensor"
         reconstruction_scene_assets_dir: "reconstruction"
     measurements:
       distance_to_goal:

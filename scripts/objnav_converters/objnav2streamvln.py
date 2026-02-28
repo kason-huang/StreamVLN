@@ -31,8 +31,9 @@ for episode in env.episodes:
     step_id = 0  # Initialize step ID
 
     while not env.episode_over:
-        rgb = observation["rgb"]  # Get the current rgb observation
-        
+        # rgb = observation["rgb"]  # Get the current rgb observation
+        rgb = observation["gs_rgb"]  # Get the current rgb observation
+
         # TODO: Save RGB frame (customize as needed)
         # --------------------------------------------------------
         import PIL.Image as Image
