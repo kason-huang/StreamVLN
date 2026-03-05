@@ -15,8 +15,8 @@ export NCCL_P2P_DISABLE=1                    # Disable P2P between nodes
 # export NCCL_DEBUG=INFO
 export NCCL_NVLS_ENABLE=0
 
-# Auto-select a large free port if unset or occupied
-if command -v python3 >/dev/null 2>&1; then
+# Auto-select a large free port if unset or occupied (ONLY for single-node training)
+if [ "$NNODES" -eq 1 ] && command -v python3 >/dev/null 2>&1; then
 SEL_PORT=$(python3 - <<'PY'
 import os, socket, random, sys
 
