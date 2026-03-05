@@ -9,11 +9,17 @@ MASTER_ADDR=${MASTER_ADDR:-192.168.0.14}     # Master node address, default 192.
 MASTER_PORT=${MASTER_PORT:-12000}            # Default port
 
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128,garbage_collection_threshold:0.6"
+
+# NCCL configuration for multi-node training
 export NCCL_SOCKET_IFNAME=eth0               # Network interface for multi-node communication
 export NCCL_IB_DISABLE=1                     # Disable InfiniBand (Ethernet environment)
 export NCCL_P2P_DISABLE=1                    # Disable P2P between nodes
-# export NCCL_DEBUG=INFO
-export NCCL_NVLS_ENABLE=0
+export NCCL_NVLS_ENABLE=0                    # Disable NVLS
+export NCCL_DEBUG=INFO                       # Enable NCCL debug logging
+export NCCL_TIMEOUT=7200                     # Increase timeout to 2 hours
+
+# PyTorch distributed configuration
+export TORCH_DIST_INIT_PORT=$MASTER_PORT     # Explicitly set the init port
 
 # Auto-select a large free port if unset or occupied (ONLY for single-node training)
 if [ "$NNODES" -eq 1 ] && command -v python3 >/dev/null 2>&1; then
@@ -125,6 +131,24 @@ if [ "$GPU_COUNT" -lt "$NPROC_PER_NODE" ]; then
     NPROC_PER_NODE=$GPU_COUNT
 fi
 echo "========================"
+echo ""
+echo "========================================"
+echo "Starting distributed training..."
+echo "========================================"
+if [ "$NODE_RANK" -eq 0 ]; then
+    echo "This is MASTER node (rank 0)"
+    echo "Waiting for worker nodes to connect..."
+    echo "Worker nodes should run:"
+    echo "  NODE_RANK=1 bash scripts/streamvln_train_lora_v100_32g_multinode.sh"
+    echo ""
+else
+    echo "This is WORKER node (rank $NODE_RANK)"
+    echo "Connecting to master at: $MASTER_ADDR:$MASTER_PORT"
+    echo ""
+fi
+echo "Press Ctrl+C to stop all nodes"
+echo "========================================"
+echo ""
 
 torchrun --nnodes=$NNODES --nproc_per_node=$NPROC_PER_NODE --node_rank=$NODE_RANK \
     --rdzv_id=12345 --rdzv_backend=c10d --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT streamvln/streamvln_train.py \
