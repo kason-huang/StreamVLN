@@ -14,6 +14,8 @@ Key design decisions:
 
 import argparse
 import json
+import fcntl
+import os
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Iterator
@@ -23,6 +25,69 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from loguru import logger
 from tqdm import tqdm
 
+
+# ============================================================================
+# Checkpoint Management
+# ============================================================================
+
+def load_checkpoint(checkpoint_file: Path) -> set:
+    """
+    Load checkpoint, return set of processed annotation IDs.
+
+    Args:
+        checkpoint_file: Path to checkpoint JSON file
+
+    Returns:
+        Set of processed annotation IDs
+    """
+    if checkpoint_file.exists():
+        try:
+            with open(checkpoint_file, "r") as f:
+                data = json.load(f)
+                processed_ids = set(data.get("processed_ann_ids", []))
+                logger.info(f"Loaded checkpoint: {len(processed_ids)} processed annotations")
+                return processed_ids
+        except Exception as e:
+            logger.warning(f"Failed to load checkpoint: {e}, starting fresh")
+            return set()
+    return set()
+
+
+def save_checkpoint(checkpoint_file: Path, processed_ann_ids: set) -> None:
+    """
+    Save checkpoint to file with file locking for multi-process safety.
+
+    Args:
+        checkpoint_file: Path to checkpoint JSON file
+        processed_ann_ids: Set of processed annotation IDs
+    """
+    try:
+        # Ensure parent directory exists
+        checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write to temp file first (atomic operation)
+        temp_file = checkpoint_file.with_suffix(".tmp")
+        with open(temp_file, "w") as f:
+            # Acquire exclusive lock
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                json.dump({"processed_ann_ids": list(processed_ann_ids)}, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            finally:
+                # Release lock
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+        # Atomic rename
+        temp_file.replace(checkpoint_file)
+
+    except Exception as e:
+        logger.error(f"Failed to save checkpoint: {e}")
+
+
+# ============================================================================
+# R2R Dataset Features
+# ============================================================================
 
 # R2R Dataset Features Definition
 # Note: "task" is a special required field that is added to each frame,
@@ -240,11 +305,18 @@ def process_dataset(
     # Create output path
     output_path = output_dir / repo_id
 
+    # Initialize checkpoint file (in same directory as annotations.json)
+    checkpoint_file = data_dir / dataset_name / "conversion_progress.json"
+
     logger.info(
         f"Processing {dataset_name}: "
         f"(Total episodes: {total}, range: [{start_idx}, {end_idx}), processing: {selected_count})"
     )
     logger.info(f"Output directory: {output_path}")
+    logger.info(f"Checkpoint file: {checkpoint_file}")
+
+    # Load checkpoint to track processed annotations
+    processed_ann_ids = load_checkpoint(checkpoint_file)
 
     # Check if dataset already exists
     if overwrite and output_path.exists():
@@ -255,18 +327,18 @@ def process_dataset(
         logger.info(f"Dataset already exists at {output_path}")
         # Load existing dataset to continue
         dataset = LeRobotDataset(repo_id=repo_id, root=output_dir)
-        # Count existing episodes
-        data_chunk_dir = output_path / "data" / "chunk-000"
-        if data_chunk_dir.exists():
-            existing_episodes = len(list(data_chunk_dir.glob("episode_*.parquet")))
-        else:
-            existing_episodes = 0
-        logger.info(f"Found {existing_episodes} existing episodes, continuing from episode {existing_episodes}")
-        # Note: Resume is approximate due to instruction splitting
-        selected_anns = selected_anns[existing_episodes:]
+
+        # Filter out already processed annotations using checkpoint
+        unprocessed_anns = [ann for ann in selected_anns if ann["id"] not in processed_ann_ids]
+        skipped_count = len(selected_anns) - len(unprocessed_anns)
+
+        logger.info(f"Checkpoint: {len(processed_ann_ids)} total processed, skipping {skipped_count} in current range")
+
+        selected_anns = unprocessed_anns
         selected_count = len(selected_anns)
+
         if selected_count == 0:
-            logger.info("All episodes already processed")
+            logger.info("All episodes in range already processed")
             return total, dataset.total_episodes
     else:
         # Create new dataset
@@ -306,6 +378,11 @@ def process_dataset(
     progress_bar = tqdm(selected_anns, desc=f"Processing {dataset_name}")
 
     for ann in progress_bar:
+        # Double-check: skip if already processed (for multi-process safety)
+        if ann["id"] in processed_ann_ids:
+            logger.debug(f"Skipping already processed annotation: {ann['id']}")
+            continue
+
         episodes_created, success, message = process_episode(
             dataset=dataset,
             ann=ann,
@@ -313,11 +390,16 @@ def process_dataset(
             data_dir=data_dir,
             episode_idx=0,
         )
+
         if success:
             success_count += 1
             total_output_episodes += episodes_created
+            # Update checkpoint immediately after successful processing
+            processed_ann_ids.add(ann["id"])
+            save_checkpoint(checkpoint_file, processed_ann_ids)
+
         progress_bar.set_postfix_str(
-            f"Output: {total_output_episodes}, Success: {success_count}/{selected_count}"
+            f"Output: {total_output_episodes}, Success: {success_count}/{selected_count}, Checkpoint: {len(processed_ann_ids)}"
         )
         progress_bar.set_description(message[:50])
 

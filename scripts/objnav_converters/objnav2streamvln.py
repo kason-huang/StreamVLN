@@ -24,6 +24,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+# objnav_image.yaml是给gs场景准备的，如果是hm3d场景的话，直接用vln_r2r.yaml即可
 CONFIG_PATH = "config/objnav_image.yaml"  # Path to the Habitat config file
 ANNOT_PATH = args.annot_path  # Path to the annotations file from command line
 BASE_DIR = os.path.dirname(ANNOT_PATH)  # Base directory for rgb frames

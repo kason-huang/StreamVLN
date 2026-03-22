@@ -2,8 +2,8 @@ export MAGNUM_LOG=quiet HABITAT_SIM_LOG=quiet
 export HF_HUB_OFFLINE=0
 MASTER_PORT=$((RANDOM % 101 + 20000))
 
-CHECKPOINT="./checkpoints/mengwei0427/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln"
-#CHECKPOINT="checkpoints/StreamVLN_Video_qwen_1_5_1epoch_196token_8history_32frame"
+#CHECKPOINT="./checkpoints/mengwei0427/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln"
+CHECKPOINT="checkpoints/StreamVLN_Video_qwen_1_5_1epoch_196token_8history_32frame_lora_20260312"
 echo "CHECKPOINT: ${CHECKPOINT}"
 
 time torchrun --nproc_per_node=2 \
@@ -11,10 +11,10 @@ time torchrun --nproc_per_node=2 \
     streamvln/streamvln_eval_v100_32g.py \
     --model_path $CHECKPOINT \
     --habitat_config_path "config/vln_r2r.yaml" \
-    --eval_split "val_seen" \
-    --output_path "results/vals/seen/paper"
-    #--eval_split "val_unseen" \
-    #--output_path "results/vals/_unseen/streamvln_3"
+    #--eval_split "val_seen" \
+    #--output_path "results/vals/seen/paper"
+    --eval_split "val_unseen" \
+    --output_path "results/vals/_unseen/streamvln_lora_epoch_3_3"
 
     #--num_future_steps 4 \
     #--num_frames 16 \

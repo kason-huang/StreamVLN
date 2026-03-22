@@ -30,7 +30,16 @@
       "Bash(ping:*)",
       "Bash(nvidia-smi:*)",
       "Bash(PYTHONPATH=. /root/miniconda3/envs/streamvln-0226/bin/python:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(ls:*)",
+      "Bash(xargs:*)",
+      "Bash(echo:*)",
+      "Bash(tee:*)",
+      "Bash(lscpu:*)",
+      "Bash(if:*)",
+      "Bash(then echo '=== Episode 目录统计 ===')",
+      "Bash(else echo \"源目录不存在\")",
+      "Bash(fi:*)"
     ],
     "deny": [],
     "ask": []
