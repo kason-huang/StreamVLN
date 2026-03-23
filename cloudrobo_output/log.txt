@@ -1,0 +1,250 @@
+
+(streamvln-0226) root@ecs-v100-0004:~/workspace/StreamVLN# python scripts/objnav_converters/merge_scene_episodes.py --num-wo
+输出目录: data/trajectory_data/objectnav/hm3d_v2/train/merged
+
+正在收集场景文件...
+
+找到 224 个episode目录
+找到 145 个唯一场景
+
+场景统计:
+  唯一场景数: 145
+  总输入文件数: 31979
+
+示例场景:
+  YHmAkqgwe2p: 221 个文件
+  PPTLa8SkUfo: 220 个文件
+  U3oQjwTuMX8: 220 个文件
+  DBBESbk4Y3k: 220 个文件
+  8B43pG641ff: 221 个文件
+
+============================================================
+使用 20 个worker处理 145 个场景...
+============================================================
+
+开始处理 145 个场景 (分 8 批)...
+
+
+============================================================
+批次 1/8: 处理场景 1-20
+============================================================
+
+  [1/20] ✅ 6YtDG3FhNvx - 125 episodes | 9.1s
+  [2/20] ✅ 4vwGX7U38Ux - 34 episodes | 17.8s
+  [3/20] ✅ 1UnKg1rAb8A - 826 episodes | 38.3s
+  [4/20] ✅ 741Fdj7NLF9 - 723 episodes | 70.0s
+  [5/20] ✅ 6HRFAUDqpTb - 4014 episodes | 84.0s
+  [6/20] ✅ 8wJuSPJ9FXG - 2201 episodes | 92.3s
+  [7/20] ✅ 92vYG1q49FY - 3600 episodes | 165.2s
+  [8/20] ✅ 1S7LAXRdDqK - 2614 episodes | 220.0s
+  [9/20] ✅ 2Pc8W48bu21 - 3531 episodes | 222.0s
+  [10/20] ✅ 1xGrZPxG1Hz - 9043 episodes | 247.9s
+  [11/20] ✅ 9h5JJxM6E5S - 2856 episodes | 274.9s
+  [12/20] ✅ 3XYAD64HpDr - 9415 episodes | 320.6s
+  [13/20] ✅ 5biL7VEkByM - 4745 episodes | 468.4s
+  [14/20] ✅ 5Kw4nGdqYtS - 6404 episodes | 497.6s
+  [15/20] ✅ 77mMEyxhs44 - 8178 episodes | 533.2s
+  [16/20] ✅ ACZZiU6BXLz - 13140 episodes | 599.6s
+  [17/20] ✅ 6imZUJGRUq4 - 6547 episodes | 1109.2s
+  [18/20] ✅ 226REUyJh2K - 3404 episodes | 1116.7s
+  [19/20] ✅ 8B43pG641ff - 7139 episodes | 1149.3s
+  [20/20] ✅ 3CBBjsNkhqW - 7845 episodes | 1514.2s
+✅ 批次 1/8 完成 | 耗时: 1531.6s | 总进度: 20/145 | ETA: 9573s (159.5min)
+   内存已释放 (worker进程退出)
+
+
+============================================================
+批次 2/8: 处理场景 21-40
+============================================================
+
+  [1/20] ✅ H8rQCnvBgo6 - 32 episodes | 12.9s
+  [2/20] ✅ GtM3JtRvvvR - 13 episodes | 23.2s
+  [3/20] ✅ HZ2iMMBsBQ9 - 282 episodes | 33.8s
+  [4/20] ✅ HfMobPm86Xn - 49 episodes | 46.1s
+  [5/20] ✅ HeSYRw7eMtG - 3311 episodes | 76.5s
+  [6/20] ✅ GsQBY83r3hb - 2235 episodes | 126.0s
+  [7/20] ✅ GTV2Y73Sn5t - 6192 episodes | 268.3s
+  [8/20] ✅ ENiCjXWB6aQ - 3060 episodes | 290.2s
+  [9/20] ✅ FnDDfrBZPhh - 4713 episodes | 344.3s
+  [10/20] ✅ CthA7sQNTPK - 10701 episodes | 378.8s
+  [11/20] ✅ GPyDUnjwZQy - 10034 episodes | 472.8s
+  [12/20] ✅ DBBESbk4Y3k - 10071 episodes | 500.1s
+  [13/20] ✅ E1NrAhMoqvB - 9877 episodes | 523.5s
+  [14/20] ✅ CQWES1bawee - 3822 episodes | 601.5s
+  [15/20] ✅ DoSbsoo4EAg - 17113 episodes | 614.4s
+  [16/20] ✅ FRQ75PjD278 - 15899 episodes | 669.0s
+  [17/20] ✅ DsEJeNPcZtE - 7823 episodes | 886.9s
+  [18/20] ✅ DNWbUAJYsPy - 17456 episodes | 1153.8s
+  [19/20] ✅ GGBvSFddQgs - 11524 episodes | 1725.4s
+  [20/20] ✅ DqJKU7YU7dA - 13645 episodes | 2105.2s
+✅ 批次 2/8 完成 | 耗时: 2128.1s | 总进度: 40/145 | ETA: 9607s (160.1min)
+   内存已释放 (worker进程退出)
+
+
+============================================================
+批次 3/8: 处理场景 41-60
+============================================================
+
+  [1/20] ✅ R9fYpvCUkV7 - 47 episodes | 4.3s
+  [2/20] ✅ JptJPosx1Z6 - 9 episodes | 60.4s
+  [3/20] ✅ MVVzj944atG - 2713 episodes | 66.9s
+  [4/20] ✅ PE6kVEtrxtj - 1412 episodes | 87.2s
+  [5/20] ✅ NtnvZSMK3en - 3708 episodes | 180.8s
+  [6/20] ✅ HkseAnWCgqk - 2884 episodes | 186.5s
+  [7/20] ✅ QN2dRqwd84J - 4116 episodes | 234.5s
+  [8/20] ✅ LVgQNuK8vtv - 2983 episodes | 254.7s
+  [9/20] ✅ QVAA6zecMHu - 15210 episodes | 502.7s
+  [10/20] ✅ NEVASPhcrxR - 3909 episodes | 504.8s
+  [11/20] ✅ NGyoyh91xXJ - 11347 episodes | 590.3s
+  [12/20] ✅ Jfyvj3xn2aJ - 9892 episodes | 595.9s
+  [13/20] ✅ NPHxDe6VeCc - 7564 episodes | 603.9s
+  [14/20] ✅ HxmXPBbFCkH - 12751 episodes | 921.0s
+  [15/20] ✅ RTV2n6fXB2w - 19721 episodes | 1170.6s
+  [16/20] ✅ KjZrPggnHm8 - 9488 episodes | 1674.0s
+  [17/20] ✅ PPTLa8SkUfo - 7226 episodes | 1831.3s
+  [18/20] ✅ LcAd9dhvVwh - 14557 episodes | 2314.6s
+  [19/20] ✅ L5QEsaVqwrY - 11028 episodes | 2632.0s
+  [20/20] ✅ JNiWU5TZLtt - 19656 episodes | 5442.8s
+✅ 批次 3/8 完成 | 耗时: 5503.4s | 总进度: 60/145 | ETA: 12981s (216.3min)
+   内存已释放 (worker进程退出)
+
+
+============================================================
+批次 4/8: 处理场景 61-80
+============================================================
+
+  [1/20] ✅ XfUxBGTFQQb - 0 episodes | 11.9s
+  [2/20] ✅ X6Pct1msZv5 - 54 episodes | 15.9s
+  [3/20] ✅ XYyR54sxe6b - 1188 episodes | 25.2s
+  [4/20] ✅ VSxVP19Cdyw - 3539 episodes | 131.9s
+  [5/20] ✅ XVSZJAtHKdi - 2768 episodes | 132.1s
+  [6/20] ✅ UuwwmrTsfBN - 4962 episodes | 229.1s
+  [7/20] ✅ TSJmdttd2GV - 2248 episodes | 232.8s
+  [8/20] ✅ Wo6kuutE9i7 - 3597 episodes | 265.4s
+  [9/20] ✅ WhNyDTnd9g5 - 8712 episodes | 366.4s
+  [10/20] ✅ W16Bm4ysK8v - 7355 episodes | 372.8s
+  [11/20] ✅ W9YAR9qcuvN - 10574 episodes | 474.5s
+  [12/20] ✅ YHmAkqgwe2p - 18927 episodes | 490.1s
+  [13/20] ✅ TYDavTf8oyy - 11377 episodes | 800.6s
+  [14/20] ✅ SgkmkWjjmDJ - 7655 episodes | 1014.7s
+  [15/20] ✅ RaYrxWt5pR1 - 17172 episodes | 1041.2s
+  [16/20] ✅ URjpCob8MGw - 15575 episodes | 1110.9s
+  [17/20] ✅ VoVGtfYrpuQ - 12438 episodes | 1120.5s
+  [18/20] ✅ S7uMvxjBVZq - 12119 episodes | 1199.0s
+  [19/20] ✅ XiJhRLvpKpX - 3254 episodes | 3254.6s
+  [20/20] ✅ U3oQjwTuMX8 - 17501 episodes | 3317.7s
+✅ 批次 4/8 完成 | 耗时: 3352.7s | 总进度: 80/145 | ETA: 10169s (169.5min)
+   内存已释放 (worker进程退出)
+
+
+============================================================
+批次 5/8: 处理场景 81-100
+============================================================
+
+  [1/20] ✅ gQ3xxshDiCz - 24 episodes | 11.8s
+  [2/20] ✅ g8Xrdbe9fir - 1065 episodes | 26.0s
+  [3/20] ✅ YMNvYDhK8mB - 23 episodes | 33.7s
+  [4/20] ✅ b3WpMbPFB6q - 51 episodes | 45.5s
+  [5/20] ✅ g7hUFVNac26 - 88 episodes | 72.9s
+  [6/20] ✅ ceJTwFNjqCt - 1007 episodes | 140.5s
+  [7/20] ✅ YmWinf3mhb5 - 15865 episodes | 385.0s
+  [8/20] ✅ fK2vEV32Lag - 14661 episodes | 467.7s
+  [9/20] ✅ YY8rqV6L6rf - 14050 episodes | 536.1s
+  [10/20] ✅ ZNanfzgCdm3 - 14751 episodes | 559.0s
+  [11/20] ✅ bHKTDQFJxTw - 15972 episodes | 602.8s
+  [12/20] ✅ dQrLTxHvLXU - 13528 episodes | 704.6s
+  [13/20] ✅ bdp1XNEdvmW - 14250 episodes | 737.4s
+  [14/20] ✅ bB6nKqfsb1z - 15354 episodes | 780.2s
+  [15/20] ✅ Z2DQddYp1fn - 12586 episodes | 783.8s
+  [16/20] ✅ YJDUB7hWg9h - 9086 episodes | 812.3s
+  [17/20] ✅ erXNfWVjqZ8 - 13711 episodes | 998.4s
+  [18/20] ✅ fRZhp6vWGw7 - 12372 episodes | 1195.7s
+  [19/20] ✅ aRKASs4e8j1 - 10565 episodes | 1288.4s
+  [20/20] ✅ fxbzYAGkrtm - 14353 episodes | 1906.1s
+✅ 批次 5/8 完成 | 耗时: 1927.2s | 总进度: 100/145 | ETA: 6499s (108.3min)
+   内存已释放 (worker进程退出)
+
+
+============================================================
+批次 6/8: 处理场景 101-120
+============================================================
+
+  [1/20] ✅ nS8T59Aw3sf - 436 episodes | 24.5s
+  [2/20] ✅ iigzG1rtanx - 32 episodes | 28.6s
+  [3/20] ✅ ggNAcMh8JPT - 262 episodes | 32.6s
+  [4/20] ✅ kA2nG18hCAr - 334 episodes | 41.2s
+  [5/20] ✅ j2EJhFEQGCL - 29 episodes | 47.0s
+  [6/20] ✅ gQgtJ9Stk5s - 1367 episodes | 108.5s
+  [7/20] ✅ iKFn6fzyRqs - 1575 episodes | 119.0s
+  [8/20] ✅ h6nwVLpAKQz - 6981 episodes | 141.7s
+  [9/20] ✅ iLDo95ZbDJq - 3168 episodes | 278.3s
+  [10/20] ✅ kJxT5qssH4H - 15020 episodes | 437.4s
+  [11/20] ✅ oEPjPNSPmzL - 9319 episodes | 455.2s
+  [12/20] ✅ gmuS7Wgsbrx - 3512 episodes | 523.8s
+  [13/20] ✅ nACV8wLu1u5 - 6453 episodes | 806.6s
+  [14/20] ✅ hWDDQnSDMXb - 6170 episodes | 822.0s
+  [15/20] ✅ iePHCSf119p - 3203 episodes | 1184.4s
+  [16/20] ✅ gjhYih4upQ9 - 12042 episodes | 1245.0s
+  [17/20] ✅ ixTj1aTMup2 - 11237 episodes | 1394.0s
+  [18/20] ✅ nGhNxKrgBPb - 15963 episodes | 1983.1s
+  [19/20] ✅ j6fHrce9pHR - 9014 episodes | 2232.6s
+  [20/20] ✅ mt9H8KcxRKD - 10094 episodes | 6019.2s
+✅ 批次 6/8 完成 | 耗时: 6086.5s | 总进度: 120/145 | ETA: 4277s (71.3min)
+   内存已释放 (worker进程退出)
+
+
+============================================================
+批次 7/8: 处理场景 121-140
+============================================================
+
+  [1/20] ✅ pcpn6mFqFCg - 7 episodes | 18.2s
+  [2/20] ✅ qZ4B7U6XE5Y - 685 episodes | 31.2s
+  [3/20] ✅ wPLokgvCnuk - 1602 episodes | 36.2s
+  [4/20] ✅ oPj9qMxrDEa - 267 episodes | 36.7s
+  [5/20] ✅ vLpv2VX547B - 728 episodes | 62.3s
+  [6/20] ✅ qz3829g1Lzf - 3600 episodes | 92.9s
+  [7/20] ✅ u5atqC7vRCY - 900 episodes | 98.9s
+  [8/20] ✅ oahi4u45xMf - 2403 episodes | 183.0s
+  [9/20] ✅ u9rPN5cHWBg - 1740 episodes | 223.6s
+  [10/20] ✅ qgZhhx1MpTi - 13227 episodes | 402.7s
+  [11/20] ✅ ooq3SnvC79d - 16339 episodes | 590.3s
+  [12/20] ✅ vDfkYo5VqEQ - 8708 episodes | 602.3s
+  [13/20] ✅ w8GiikYuFRk - 6605 episodes | 685.5s
+  [14/20] ✅ wsAYBFtQaL7 - 6231 episodes | 731.4s
+  [15/20] ✅ oStKKWkQ1id - 15141 episodes | 748.9s
+  [16/20] ✅ sX9xad6ULKc - 9226 episodes | 753.9s
+  [17/20] ✅ xAHnY3QzFUN - 18660 episodes | 1215.5s
+  [18/20] ✅ v7DzfFFEpsD - 12863 episodes | 1422.8s
+  [19/20] ✅ qk9eeNeR4vw - 13607 episodes | 1539.4s
+  [20/20] ✅ xWvSkKiWQpC - 12896 episodes | 2207.7s
+✅ 批次 7/8 完成 | 耗时: 2231.7s | 总进度: 140/145 | ETA: 813s (13.5min)
+   内存已释放 (worker进程退出)
+
+
+============================================================
+批次 8/8: 处理场景 141-145
+============================================================
+
+  [1/5] ✅ zepmXAdrpjR - 972 episodes | 175.5s
+  [2/5] ✅ yHLr6bvWsVm - 8921 episodes | 223.1s
+  [3/5] ✅ yX5efd48dLf - 16172 episodes | 1066.2s
+  [4/5] ✅ xgLmjqzoAzF - 11727 episodes | 1082.5s
+  [5/5] ✅ zUG6FL9TYeR - 18645 episodes | 1492.7s
+✅ 批次 8/8 完成 | 耗时: 1510.6s | 总进度: 145/145 | ETA: 0s (0.0min)
+   内存已释放 (worker进程退出)
+
+
+
+============================================================
+✅ 合并完成！
+============================================================
+总场景数: 145
+成功: 145 | 失败: 0
+合并总episodes: 1,076,917
+包含多个文件的场景: 145
+平均每场景episodes: 7427.0
+总耗时: 24271.7秒 (404.5分钟)
+平均处理速度: 167.4秒/场景
+
+输出目录: data/trajectory_data/objectnav/hm3d_v2/train/merged
+已保存文件数: 145
