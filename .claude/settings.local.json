@@ -39,7 +39,9 @@
       "Bash(if:*)",
       "Bash(then echo '=== Episode 目录统计 ===')",
       "Bash(else echo \"源目录不存在\")",
-      "Bash(fi:*)"
+      "Bash(fi:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

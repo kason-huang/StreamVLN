@@ -93,7 +93,7 @@ run_job() {
     echo "[Job $job_id] GPU: $gpu_id"
     echo ""
 
-    CUDA_VISIBLE_DEVICES=$gpu_id PYTHONPATH=. python ./scripts/objnav_converters/objnav2streamvln.py \
+    CUDA_VISIBLE_DEVICES=$gpu_id PYTHONPATH=. python ./scripts/objnav_converters/hm3d_objnav2streamvln.py \
         --annot-path "$annot_file" \
         habitat.dataset.data_path="$data_file"
 
